@@ -282,12 +282,36 @@ contract LandNFT is ERC721, Ownable, AccessControl {
     }
     
     /**
-     * @dev Get total number of transfers for a token
-     * @param tokenId Token ID to query
+     * @dev Admin force transfer function - allows admin to transfer any NFT
+     * This is needed for property transfers when users don't have technical knowledge
+     * @param tokenId Token ID to transfer
+     * @param to Address to transfer to
      */
-    function getTransferCount(uint256 tokenId) public view returns (uint256) {
-        require(_ownerOf(tokenId) != address(0), "LandNFT: land not registered");
-        return transferHistory[tokenId].length;
+    function adminTransfer(uint256 tokenId, address to) public onlyOwner {
+        require(to != address(0), "LandNFT: cannot transfer to zero address");
+        require(_ownerOf(tokenId) != address(0), "LandNFT: token does not exist");
+        
+        address from = _ownerOf(tokenId);
+        
+        // Force transfer using internal _update function
+        _update(to, tokenId, address(0));
+        
+        // The _update override will automatically handle the transfer event and history
+    }
+    
+    /**
+     * @dev Batch admin transfer function - transfer multiple NFTs at once
+     * @param tokenIds Array of token IDs to transfer
+     * @param to Address to transfer all tokens to
+     */
+    function adminBatchTransfer(uint256[] calldata tokenIds, address to) public onlyOwner {
+        require(to != address(0), "LandNFT: cannot transfer to zero address");
+        
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            if (_ownerOf(tokenIds[i]) != address(0)) {
+                adminTransfer(tokenIds[i], to);
+            }
+        }
     }
     
     /**
@@ -300,5 +324,29 @@ contract LandNFT is ERC721, Ownable, AccessControl {
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
+    }
+    
+    /**
+     * @dev Get total number of transfers for a token
+     * @param tokenId Token ID to query
+     */
+    function getTransferCount(uint256 tokenId) public view returns (uint256) {
+        require(_ownerOf(tokenId) != address(0), "LandNFT: land not registered");
+        return transferHistory[tokenId].length;
+    }
+    
+    /**
+     * @dev Emergency function to fix ownership of existing NFTs
+     * Allows admin to claim ownership of any NFT for management purposes
+     * @param tokenId Token ID to claim
+     */
+    function adminClaimOwnership(uint256 tokenId) public onlyOwner {
+        require(_ownerOf(tokenId) != address(0), "LandNFT: token does not exist");
+        
+        address currentOwner = _ownerOf(tokenId);
+        if (currentOwner != owner()) {
+            // Transfer to admin for management
+            _update(owner(), tokenId, address(0));
+        }
     }
 }

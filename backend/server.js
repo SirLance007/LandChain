@@ -58,6 +58,7 @@ app.use('/api/upload', require('./routes/uploadRoute'));
 app.use('/api/land', require('./routes/landRoute'));
 app.use('/api/documents', require('./routes/documentRoute'));
 app.use('/api/transfer', require('./routes/transferRoute'));
+app.use('/api', require('./debug-nft-ownership')); // Debug routes
 
 // Health check
 app.get('/health', (req, res) => {

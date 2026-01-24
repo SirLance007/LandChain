@@ -344,19 +344,59 @@ const executeOwnershipTransfer = async (transfer) => {
       sellerWalletAddress: transfer.sellerWalletAddress
     });
     
+    // DETAILED DEBUGGING - Check current NFT ownership on blockchain
+    if (blockchainService.isConnected()) {
+      try {
+        console.log('🔍 DEBUGGING: Checking current NFT ownership on blockchain...');
+        const currentOwner = await blockchainService.contract.ownerOf(transfer.propertyId);
+        const contractOwner = await blockchainService.contract.owner();
+        const adminWallet = blockchainService.signer.address;
+        
+        console.log('📋 BLOCKCHAIN OWNERSHIP DEBUG:');
+        console.log('   NFT Token ID:', transfer.propertyId);
+        console.log('   Current NFT Owner:', currentOwner);
+        console.log('   Contract Owner (Admin):', contractOwner);
+        console.log('   Admin Wallet Address:', adminWallet);
+        console.log('   Is Admin = Contract Owner?', contractOwner.toLowerCase() === adminWallet.toLowerCase());
+        console.log('   Is Admin = NFT Owner?', currentOwner.toLowerCase() === adminWallet.toLowerCase());
+        
+        // Check if NFT exists
+        try {
+          const landData = await blockchainService.getLandFromBlockchain(transfer.propertyId);
+          console.log('   NFT Exists: YES');
+          console.log('   NFT IPFS Hash:', landData.ipfsHash);
+          console.log('   NFT Area:', landData.area);
+        } catch (nftError) {
+          console.log('   NFT Exists: NO - Error:', nftError.message);
+        }
+        
+      } catch (debugError) {
+        console.log('❌ DEBUGGING ERROR:', debugError.message);
+      }
+    }
+    
     if (blockchainService.isConnected() && transfer.buyerWalletAddress) {
       try {
         console.log('🔗 Executing blockchain NFT transfer...');
         console.log(`   Token ID: ${transfer.propertyId}`);
         console.log(`   To: ${transfer.buyerWalletAddress}`);
         
-        // Execute blockchain transfer
-        blockchainResult = await blockchainService.transferLandNFTViaAdmin(
+        // Execute blockchain transfer using ADMIN FORCE TRANSFER
+        blockchainResult = await blockchainService.adminForceTransfer(
           transfer.propertyId,
           transfer.buyerWalletAddress
         );
         
-        console.log('✅ Blockchain transfer successful:', blockchainResult);
+        console.log('✅ Blockchain transfer result received:', {
+          success: blockchainResult.success,
+          transactionHash: blockchainResult.transactionHash,
+          transferHash: blockchainResult.transferHash,
+          uniqueTransfer: blockchainResult.uniqueTransfer,
+          forceTransfer: blockchainResult.forceTransfer,
+          from: blockchainResult.from,
+          to: blockchainResult.to,
+          verifiedNewOwner: blockchainResult.verifiedNewOwner
+        });
         
         // Check if it was a real blockchain transfer or just database update
         if (blockchainResult.success && 
@@ -364,12 +404,23 @@ const executeOwnershipTransfer = async (transfer) => {
             blockchainResult.transactionHash !== 'already-owned' &&
             blockchainResult.uniqueTransfer) {
           transferSuccess = true;
-          console.log('🎉 Real blockchain NFT transfer completed!');
+          console.log('🎉🎉🎉 REAL BLOCKCHAIN NFT TRANSFER COMPLETED! 🎉🎉🎉');
           console.log('🔗 Unique transfer hash:', blockchainResult.transferHash);
+          console.log('📋 Transaction details:');
+          console.log('   From:', blockchainResult.from);
+          console.log('   To:', blockchainResult.to);
+          console.log('   Verified new owner:', blockchainResult.verifiedNewOwner);
+          console.log('   Block number:', blockchainResult.blockNumber);
+          console.log('   Gas used:', blockchainResult.gasUsed);
         } else {
           transferSuccess = false;
-          console.log('📝 Database-only transfer (blockchain transfer not possible)');
-          console.log('💡 Reason:', blockchainResult.message);
+          console.log('❌ DATABASE-ONLY TRANSFER (blockchain transfer failed)');
+          console.log('💡 Reason:', blockchainResult.message || 'Unknown error');
+          console.log('📋 Failed transfer details:', {
+            success: blockchainResult.success,
+            transactionHash: blockchainResult.transactionHash,
+            uniqueTransfer: blockchainResult.uniqueTransfer
+          });
         }
         
       } catch (blockchainError) {

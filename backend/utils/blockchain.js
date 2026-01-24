@@ -7,6 +7,9 @@ const LAND_NFT_ABI = [
   "function addRegistrar(address registrar) public",
   "function removeRegistrar(address registrar) public", 
   "function isRegistrar(address account) public view returns (bool)",
+  "function adminTransfer(uint256 tokenId, address to) public", // NEW: Force transfer
+  "function adminBatchTransfer(uint256[] calldata tokenIds, address to) public", // NEW: Batch transfer
+  "function adminClaimOwnership(uint256 tokenId) public", // NEW: Claim ownership
   
   // Minting (restricted to registrars)
   "function mintLand(address to, string memory ipfsHash, int256 lat, int256 lon, uint256 area) public returns (uint256)",
@@ -23,6 +26,7 @@ const LAND_NFT_ABI = [
   "function getTotalLands() public view returns (uint256)",
   "function getTransferCount(uint256 tokenId) public view returns (uint256)",
   "function ownerOf(uint256 tokenId) public view returns (address)",
+  "function owner() public view returns (address)",
   
   // Events
   "event LandRegistered(uint256 indexed tokenId, address indexed owner, string ipfsHash, bytes32 indexed landHash, uint256 timestamp)",
@@ -186,25 +190,207 @@ class BlockchainService {
     }
   }
 
-  async getTransferHistory(tokenId) {
+  async adminForceTransfer(tokenId, newOwnerAddress) {
     if (!this.isInitialized) {
       throw new Error('Blockchain service not initialized');
     }
 
     try {
-      const history = await this.contract.getTransferHistory(tokenId);
+      console.log('🔥🔥🔥 ADMIN FORCE TRANSFER DEBUG START 🔥🔥🔥');
+      console.log('🔄 Force transferring NFT via admin power...', {
+        tokenId,
+        newOwner: newOwnerAddress
+      });
+
+      // STEP 1: Check current state
+      console.log('📋 STEP 1: Checking current blockchain state...');
+      const currentOwner = await this.contract.ownerOf(tokenId);
+      const contractOwner = await this.contract.owner();
+      const adminWallet = this.signer.address;
       
-      // Convert the result to a more readable format
-      return history.map(transfer => ({
-        from: transfer.from,
-        to: transfer.to,
-        timestamp: new Date(Number(transfer.timestamp) * 1000),
-        transferHash: transfer.transferHash
-      }));
+      console.log('   Current NFT owner:', currentOwner);
+      console.log('   Target new owner:', newOwnerAddress);
+      console.log('   Contract owner (admin):', contractOwner);
+      console.log('   Admin wallet address:', adminWallet);
+      console.log('   Admin = Contract Owner?', contractOwner.toLowerCase() === adminWallet.toLowerCase());
+      console.log('   Admin = NFT Owner?', currentOwner.toLowerCase() === adminWallet.toLowerCase());
+      
+      if (currentOwner.toLowerCase() === newOwnerAddress.toLowerCase()) {
+        console.log('⚠️ NFT already owned by target address');
+        return {
+          success: true,
+          transactionHash: 'already-owned',
+          blockNumber: 0,
+          gasUsed: '0',
+          from: currentOwner,
+          to: newOwnerAddress,
+          message: 'NFT already owned by target address'
+        };
+      }
+
+      // STEP 2: Check admin permissions
+      console.log('📋 STEP 2: Checking admin permissions...');
+      if (contractOwner.toLowerCase() !== adminWallet.toLowerCase()) {
+        console.log('❌ CRITICAL ERROR: Admin wallet is not the contract owner!');
+        console.log('   This means adminTransfer will fail');
+        throw new Error('Admin wallet is not the contract owner - cannot perform force transfer');
+      }
+      
+      console.log('✅ Admin permissions verified - proceeding with force transfer');
+
+      // STEP 3: Estimate gas
+      console.log('📋 STEP 3: Estimating gas for adminTransfer...');
+      let gasEstimate;
+      try {
+        gasEstimate = await this.contract.adminTransfer.estimateGas(tokenId, newOwnerAddress);
+        console.log('   Estimated gas:', gasEstimate.toString());
+      } catch (gasError) {
+        console.log('❌ GAS ESTIMATION FAILED:', gasError.message);
+        console.log('   This indicates the transaction will likely fail');
+        throw new Error(`Gas estimation failed: ${gasError.message}`);
+      }
+
+      // STEP 4: Execute force transfer
+      console.log('📋 STEP 4: Executing adminTransfer function...');
+      console.log('💪 Using adminTransfer - this bypasses all ownership checks!');
+      
+      const tx = await this.contract.adminTransfer(tokenId, newOwnerAddress, {
+        gasLimit: gasEstimate * 120n / 100n // Add 20% buffer
+      });
+
+      console.log('📝 FORCE TRANSFER transaction submitted:', tx.hash);
+      console.log('⏳ Waiting for confirmation...');
+
+      // STEP 5: Wait for confirmation
+      const receipt = await tx.wait();
+      console.log('✅ FORCE TRANSFER transaction confirmed:', receipt.hash);
+      console.log('📦 Block number:', receipt.blockNumber);
+      console.log('⛽ Gas used:', receipt.gasUsed.toString());
+
+      // STEP 6: Verify the transfer worked
+      console.log('📋 STEP 6: Verifying transfer success...');
+      const newOwner = await this.contract.ownerOf(tokenId);
+      console.log('   New verified owner:', newOwner);
+      console.log('   Expected owner:', newOwnerAddress);
+      console.log('   Transfer successful?', newOwner.toLowerCase() === newOwnerAddress.toLowerCase());
+
+      // STEP 7: Extract events
+      console.log('📋 STEP 7: Extracting transfer events...');
+      let transferEvent = null;
+      let transferHash = null;
+      
+      console.log('   Total logs in receipt:', receipt.logs.length);
+      
+      for (let i = 0; i < receipt.logs.length; i++) {
+        const log = receipt.logs[i];
+        console.log(`   Log ${i}:`, {
+          address: log.address,
+          topics: log.topics,
+          data: log.data
+        });
+        
+        try {
+          const parsedLog = this.contract.interface.parseLog(log);
+          console.log(`   Parsed log ${i}:`, {
+            name: parsedLog.name,
+            args: parsedLog.args
+          });
+          
+          if (parsedLog && parsedLog.name === 'LandTransferred') {
+            transferEvent = parsedLog;
+            transferHash = parsedLog.args[3]; // transferHash is the 4th argument
+            console.log('   ✅ Found LandTransferred event!');
+            console.log('   Transfer hash:', transferHash);
+            break;
+          }
+        } catch (parseError) {
+          console.log(`   Could not parse log ${i}:`, parseError.message);
+        }
+      }
+
+      const result = {
+        success: true,
+        transactionHash: receipt.hash,
+        blockNumber: receipt.blockNumber,
+        gasUsed: receipt.gasUsed.toString(),
+        from: transferEvent ? transferEvent.args[1] : currentOwner,
+        to: transferEvent ? transferEvent.args[2] : newOwnerAddress,
+        verifiedNewOwner: newOwner,
+        transferHash: transferHash, // Unique transfer hash from contract
+        uniqueTransfer: true, // This is a real blockchain transfer with unique hash
+        forceTransfer: true // This was a force transfer by admin
+      };
+
+      console.log('🎉🎉🎉 ADMIN FORCE TRANSFER COMPLETED SUCCESSFULLY! 🎉🎉🎉');
+      console.log('📋 Final result:', result);
+      console.log('💪 This transfer bypassed all ownership restrictions!');
+      console.log('🔥🔥🔥 ADMIN FORCE TRANSFER DEBUG END 🔥🔥🔥');
+      
+      return result;
 
     } catch (error) {
-      console.error('❌ Get transfer history failed:', error);
-      throw new Error(`Get transfer history failed: ${error.message}`);
+      console.log('❌❌❌ ADMIN FORCE TRANSFER FAILED! ❌❌❌');
+      console.error('Full error details:', error);
+      console.log('Error message:', error.message);
+      console.log('Error code:', error.code);
+      console.log('Error reason:', error.reason);
+      
+      // Provide more specific error messages
+      if (error.message.includes('Ownable: caller is not the owner')) {
+        throw new Error('Admin force transfer failed: Admin wallet is not the contract owner');
+      } else if (error.message.includes('token does not exist')) {
+        throw new Error('Admin force transfer failed: NFT does not exist');
+      } else if (error.message.includes('insufficient funds')) {
+        throw new Error('Admin force transfer failed: Insufficient funds for gas fees');
+      } else {
+        throw new Error(`Admin force transfer failed: ${error.message}`);
+      }
+    }
+  }
+
+  async adminClaimNFT(tokenId) {
+    if (!this.isInitialized) {
+      throw new Error('Blockchain service not initialized');
+    }
+
+    try {
+      console.log('🔥 ADMIN CLAIMING NFT OWNERSHIP for management...');
+      console.log('🔄 Claiming NFT #' + tokenId);
+
+      const currentOwner = await this.contract.ownerOf(tokenId);
+      const contractOwner = await this.contract.owner();
+      
+      console.log('👤 Current NFT owner:', currentOwner);
+      console.log('🔑 Contract owner (admin):', contractOwner);
+      
+      if (currentOwner.toLowerCase() === contractOwner.toLowerCase()) {
+        console.log('✅ Admin already owns this NFT');
+        return {
+          success: true,
+          message: 'Admin already owns this NFT',
+          alreadyOwned: true
+        };
+      }
+
+      // Claim ownership
+      const tx = await this.contract.adminClaimOwnership(tokenId);
+      console.log('📝 Claim ownership transaction submitted:', tx.hash);
+
+      const receipt = await tx.wait();
+      console.log('✅ Ownership claimed successfully:', receipt.hash);
+
+      return {
+        success: true,
+        transactionHash: receipt.hash,
+        blockNumber: receipt.blockNumber,
+        from: currentOwner,
+        to: contractOwner,
+        claimed: true
+      };
+
+    } catch (error) {
+      console.error('❌ Admin claim failed:', error);
+      throw new Error(`Admin claim failed: ${error.message}`);
     }
   }
 
