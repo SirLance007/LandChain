@@ -5,6 +5,7 @@ import axios from 'axios';
 export interface Land {
   _id: string;
   tokenId: number;
+  userId: string;
   owner: string;
   ownerName: string;
   ownerPhone: string;
@@ -23,9 +24,10 @@ interface LandContextType {
   loading: boolean;
   registerLand: (landData: Partial<Land>) => Promise<boolean>;
   getLand: (tokenId: number) => Promise<Land | null>;
-  getAllLands: () => Promise<void>;
+  getAllLands: (ownerAddress?: string, userId?: string, email?: string, googleId?: string) => Promise<void>;
   uploadDocument: (file: File, propertyId?: string, ownerAddress?: string) => Promise<string | null>;
-  refreshLands: () => Promise<void>;
+  refreshLands: (ownerAddress?: string, userId?: string, email?: string, googleId?: string) => Promise<void>;
+  clearCache: () => void; // Add cache clearing function
 }
 
 const LandContext = createContext<LandContextType | undefined>(undefined);
@@ -39,10 +41,9 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api
 export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
   const [lands, setLands] = useState<Land[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lastFetchParams, setLastFetchParams] = useState<string>('');
 
-  useEffect(() => {
-    getAllLands();
-  }, []);
+  // Remove automatic loading on mount to prevent unnecessary API calls
 
   const registerLand = async (landData: Partial<Land>): Promise<boolean> => {
     setLoading(true);
@@ -51,7 +52,8 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
       
       if (response.data.success) {
         toast.success('Land registered successfully!');
-        await getAllLands(); // Refresh the list
+        setLastFetchParams(''); // Clear cache to refresh data
+        // Don't auto-refresh here - let the calling component handle it with proper user context
         return true;
       } else {
         toast.error(response.data.error || 'Failed to register land');
@@ -86,13 +88,46 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
     }
   };
 
-  const getAllLands = async (): Promise<void> => {
+  const getAllLands = async (ownerAddress?: string, userId?: string, email?: string, googleId?: string): Promise<void> => {
+    // Create cache key to prevent duplicate calls
+    const cacheKey = `${ownerAddress || 'none'}-${userId || 'none'}-${email || 'none'}-${googleId || 'none'}`;
+    
+    // Only use cache if we have data AND same parameters (skip cache if lands is empty)
+    if (lastFetchParams === cacheKey && lands.length > 0) {
+      console.log('🚀 Using cached lands data');
+      return;
+    }
+
     setLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/land`);
+      let url = `${API_BASE_URL}/land`;
+      const params = new URLSearchParams();
+      
+      // PRIORITY ORDER: email > googleId > userId > owner
+      if (email) {
+        params.append('email', email);
+        console.log('🔍 Filtering by email:', email);
+      } else if (googleId) {
+        params.append('googleId', googleId);
+        console.log('🔍 Filtering by googleId:', googleId);
+      } else if (userId) {
+        params.append('userId', userId);
+        console.log('🔍 Filtering by userId:', userId);
+      } else if (ownerAddress) {
+        params.append('owner', ownerAddress);
+        console.log('⚠️ Filtering by wallet address (should be avoided):', ownerAddress);
+      }
+      
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+      
+      const response = await axios.get(url);
       
       if (response.data.success) {
         setLands(response.data.lands);
+        setLastFetchParams(cacheKey);
+        console.log(`✅ Fetched ${response.data.count} lands - ${response.data.filter}`);
       } else {
         toast.error('Failed to fetch lands');
       }
@@ -170,8 +205,15 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
     }
   };
 
-  const refreshLands = async (): Promise<void> => {
-    await getAllLands();
+  const refreshLands = async (ownerAddress?: string, userId?: string, email?: string, googleId?: string): Promise<void> => {
+    setLastFetchParams(''); // Clear cache to force refresh
+    await getAllLands(ownerAddress, userId, email, googleId);
+  };
+
+  const clearCache = (): void => {
+    setLastFetchParams('');
+    setLands([]);
+    console.log('🗑️ Cache cleared - next fetch will be fresh');
   };
 
   const value: LandContextType = {
@@ -182,6 +224,7 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
     getAllLands,
     uploadDocument,
     refreshLands,
+    clearCache,
   };
 
   return (

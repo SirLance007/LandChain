@@ -16,21 +16,25 @@ import {
 } from 'lucide-react';
 import { useLand } from '../contexts/LandContext';
 import { useWeb3 } from '../contexts/Web3Context';
+import { useAuth } from '../contexts/AuthContext';
 
 const MyLands: React.FC = () => {
   const { lands, loading, getAllLands } = useLand();
   const { account } = useWeb3();
+  const { user, isAuthenticated } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
 
   useEffect(() => {
-    getAllLands();
-  }, []);
+    // Use ONLY email-based filtering for proper user isolation
+    if (isAuthenticated && user && lands.length === 0) {
+      getAllLands(undefined, undefined, user.email); // Remove wallet address completely
+    }
+  }, [isAuthenticated, user?.email]); // Remove account dependency
 
-  const userLands = account 
-    ? lands.filter(land => land.owner.toLowerCase() === account.toLowerCase())
-    : [];
+  // Since we're now fetching user-specific lands from backend, no need to filter again
+  const userLands = lands;
 
   const filteredLands = userLands
     .filter(land => {
@@ -93,7 +97,7 @@ const MyLands: React.FC = () => {
     visible: { y: 0, opacity: 1 }
   };
 
-  if (!account) {
+  if (!isAuthenticated) {
     return (
       <div className="page-container-center">
         <motion.div
@@ -104,10 +108,19 @@ const MyLands: React.FC = () => {
           <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-r from-blockchain-blue to-blockchain-green p-5">
             <Home className="w-full h-full text-white" />
           </div>
-          <h2 className="text-2xl font-bold mb-4">Connect Your Wallet</h2>
+          <h2 className="text-2xl font-bold mb-4">Login Required</h2>
           <p className="text-gray-400 mb-6">
-            Please connect your wallet to view your registered properties.
+            Please login to view your registered properties.
           </p>
+          <Link to="/login">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="btn-primary"
+            >
+              Login Now
+            </motion.button>
+          </Link>
         </motion.div>
       </div>
     );
@@ -123,12 +136,22 @@ const MyLands: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <motion.div variants={itemVariants} className="mb-8">
-          <h1 className="font-orbitron text-3xl md:text-4xl font-bold mb-2">
-            My <span className="gradient-text">Properties</span>
-          </h1>
-          <p className="text-gray-400">
-            Manage and track your registered properties
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="font-orbitron text-3xl md:text-4xl font-bold mb-2">
+                My <span className="gradient-text">Properties</span>
+              </h1>
+              <p className="text-gray-400">
+                {user?.name}, manage and track your registered properties
+              </p>
+            </div>
+            <div className="hidden md:block">
+              <div className="text-right">
+                <p className="text-sm font-medium text-white">{lands.length} Properties</p>
+                <p className="text-xs text-gray-400">Total registered</p>
+              </div>
+            </div>
+          </div>
         </motion.div>
 
         {/* Filters and Search */}
@@ -282,29 +305,46 @@ const MyLands: React.FC = () => {
             variants={itemVariants}
             className="glass-card text-center py-16"
           >
-            <Home className="w-20 h-20 mx-auto text-gray-400 mb-6" />
-            <h3 className="text-2xl font-semibold mb-4">
-              {searchTerm || statusFilter !== 'all' ? 'No Properties Found' : 'No Properties Yet'}
-            </h3>
-            <p className="text-gray-400 mb-8 max-w-md mx-auto">
-              {searchTerm || statusFilter !== 'all' 
-                ? 'Try adjusting your search criteria or filters to find properties.'
-                : 'Start building your property portfolio by registering your first property on the blockchain.'
-              }
-            </p>
-            
-            {!searchTerm && statusFilter === 'all' && (
-              <Link to="/register">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="btn-primary flex items-center space-x-2 mx-auto"
-                >
-                  <Plus size={18} />
-                  <span>Register Your First Property</span>
-                </motion.button>
-              </Link>
-            )}
+            <div className="max-w-md mx-auto">
+              <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-r from-blockchain-blue/20 to-blockchain-green/20 flex items-center justify-center">
+                <Home className="w-12 h-12 text-white/50" />
+              </div>
+              <h3 className="text-2xl font-semibold mb-4">
+                {searchTerm || statusFilter !== 'all' ? 'No Properties Found' : 'Start Your Property Journey'}
+              </h3>
+              <p className="text-gray-400 mb-8">
+                {searchTerm || statusFilter !== 'all' 
+                  ? 'Try adjusting your search criteria or filters to find properties.'
+                  : `Welcome ${user?.name.split(' ')[0]}! Register your first property on the blockchain to get started with secure, transparent property ownership.`
+                }
+              </p>
+              
+              {!searchTerm && statusFilter === 'all' && (
+                <div className="space-y-4">
+                  <Link to="/register">
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="btn-primary flex items-center space-x-2 mx-auto"
+                    >
+                      <Plus size={18} />
+                      <span>Register Your First Property</span>
+                    </motion.button>
+                  </Link>
+                  
+                  <div className="flex items-center justify-center space-x-6 text-sm text-gray-500">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                      <span>Blockchain Secured</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                      <span>Government Verified</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
 

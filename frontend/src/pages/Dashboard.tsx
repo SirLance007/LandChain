@@ -19,10 +19,12 @@ import {
 } from 'lucide-react';
 import { useLand } from '../contexts/LandContext';
 import { useWeb3 } from '../contexts/Web3Context';
+import { useAuth } from '../contexts/AuthContext';
 
 const Dashboard: React.FC = () => {
   const { lands, getAllLands } = useLand();
   const { account } = useWeb3();
+  const { user, isAuthenticated } = useAuth();
   const [stats, setStats] = useState({
     total: 0,
     verified: 0,
@@ -31,14 +33,16 @@ const Dashboard: React.FC = () => {
   });
 
   useEffect(() => {
-    getAllLands();
-  }, []);
+    // Use ONLY email-based filtering for proper user isolation
+    if (isAuthenticated && user) {
+      getAllLands(undefined, undefined, user.email); // Always fetch when user changes
+    }
+  }, [isAuthenticated, user?.email]);
 
   useEffect(() => {
     if (lands.length > 0) {
-      const userLands = account ? lands.filter(land => 
-        land.owner.toLowerCase() === account.toLowerCase()
-      ) : lands;
+      // Since we're now fetching user-specific lands, no need to filter again
+      const userLands = lands;
 
       setStats({
         total: userLands.length,
@@ -76,9 +80,7 @@ const Dashboard: React.FC = () => {
     }
   ];
 
-  const recentLands = account 
-    ? lands.filter(land => land.owner.toLowerCase() === account.toLowerCase()).slice(0, 5)
-    : lands.slice(0, 5);
+  const recentLands = lands.slice(0, 5); // Already user-specific from backend
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -93,7 +95,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  if (!account) {
+  if (!isAuthenticated) {
     return (
       <div className="container mx-auto px-4 py-20">
         <div className="max-w-md mx-auto text-center page-container">
@@ -102,12 +104,15 @@ const Dashboard: React.FC = () => {
               <div className="w-16 h-16 mx-auto rounded-lg bg-primary/10 flex items-center justify-center mb-4">
                 <Wallet className="w-8 h-8 text-primary" />
               </div>
-              <CardTitle>Connect Your Wallet</CardTitle>
+              <CardTitle>Login Required</CardTitle>
             </CardHeader>
             <CardContent>
               <CardDescription className="mb-6">
-                Please connect your wallet to access your dashboard and manage your properties.
+                Please login to access your dashboard and manage your properties.
               </CardDescription>
+              <Button asChild>
+                <Link to="/login">Login Now</Link>
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -119,12 +124,27 @@ const Dashboard: React.FC = () => {
     <div className="container mx-auto px-4 py-8 page-container">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">
-          Welcome to your Dashboard
-        </h1>
-        <p className="text-muted-foreground">
-          Manage your properties and track their verification status
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">
+              Welcome back, <span className="text-primary">{user?.name.split(' ')[0]}</span>! 👋
+            </h1>
+            <p className="text-muted-foreground">
+              Manage your properties and track their verification status
+            </p>
+          </div>
+          <div className="hidden md:flex items-center space-x-2">
+            <div className="text-right">
+              <p className="text-sm font-medium">{user?.name}</p>
+              <p className="text-xs text-muted-foreground">{user?.email}</p>
+            </div>
+            <img 
+              src={user?.picture} 
+              alt={user?.name}
+              className="w-10 h-10 rounded-full border-2 border-primary/20"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Stats Cards */}

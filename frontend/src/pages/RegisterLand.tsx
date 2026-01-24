@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -24,6 +24,7 @@ import { useDropzone } from 'react-dropzone';
 import { toast } from 'react-hot-toast';
 import { useLand } from '../contexts/LandContext';
 import { useWeb3 } from '../contexts/Web3Context';
+import { useAuth } from '../contexts/AuthContext';
 
 interface FormData {
   ownerName: string;
@@ -37,8 +38,9 @@ interface FormData {
 
 const RegisterLand: React.FC = () => {
   const navigate = useNavigate();
-  const { registerLand, uploadDocument } = useLand();
+  const { registerLand, uploadDocument, clearCache } = useLand();
   const { account } = useWeb3();
+  const { user, isAuthenticated } = useAuth();
   
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<FormData>({
@@ -175,6 +177,9 @@ const RegisterLand: React.FC = () => {
 
       // Register land
       const landData = {
+        userId: user?.id,
+        userEmail: user?.email,
+        userGoogleId: user?.googleId, // Add googleId for better tracking
         owner: account,
         ownerName: formData.ownerName,
         ownerPhone: formData.ownerPhone,
@@ -191,6 +196,18 @@ const RegisterLand: React.FC = () => {
       
       if (success) {
         toast.success('🎉 Land registered successfully!');
+        // Clear cache to ensure fresh data fetch on dashboard
+        clearCache();
+        // Clear form data
+        setFormData({
+          ownerName: '',
+          ownerPhone: '',
+          area: '',
+          latitude: 28.6139,
+          longitude: 77.2090,
+          address: '',
+          documents: []
+        });
         navigate('/dashboard');
       }
     } catch (error) {
@@ -202,6 +219,28 @@ const RegisterLand: React.FC = () => {
       setIsUploading(false);
     }
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="container mx-auto px-4 py-20">
+        <div className="max-w-md mx-auto text-center">
+          <Card className="p-8">
+            <CardHeader>
+              <CardTitle>Login Required</CardTitle>
+              <CardDescription>
+                Please login to register a new property.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link to="/login">Login Now</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   if (!account) {
     return (

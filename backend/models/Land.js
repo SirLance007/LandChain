@@ -20,6 +20,21 @@ const landSchema = new mongoose.Schema({
     unique: true,
     required: true
   },
+  userId: {
+    type: String,
+    required: true,
+    index: true // Add index for faster queries
+  },
+  userEmail: {
+    type: String,
+    required: true,
+    index: true // Add index for email-based queries
+  },
+  userGoogleId: {
+    type: String,
+    required: true,
+    index: true // Add index for googleId-based queries
+  },
   owner: {
     type: String,
     required: true

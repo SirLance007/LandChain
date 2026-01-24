@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Menu, X, Wallet, Building, ChevronDown, LogOut, RefreshCw, Copy, Settings } from 'lucide-react';
+import { Menu, X, Wallet, Building, ChevronDown, LogOut, RefreshCw, Copy, Settings, User } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { 
@@ -13,6 +13,7 @@ import {
 } from '../ui/dropdown-menu';
 import WalletModal from '../ui/wallet-modal';
 import { useWeb3 } from '../../contexts/Web3Context';
+import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
 
 const Navbar: React.FC = () => {
@@ -20,6 +21,7 @@ const Navbar: React.FC = () => {
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const location = useLocation();
   const { account, connectWallet, disconnectWallet, switchAccount, isConnecting } = useWeb3();
+  const { user, isAuthenticated, logout } = useAuth();
 
   const copyAddress = () => {
     if (account) {
@@ -77,50 +79,100 @@ const Navbar: React.FC = () => {
 
           {/* Right Side Actions */}
           <div className="hidden md:flex items-center space-x-4">
-            {account ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <Badge variant="secondary" className="font-mono text-xs">
-                      {`${account.slice(0, 6)}...${account.slice(-4)}`}
-                    </Badge>
-                    <ChevronDown className="w-3 h-3" />
+            {/* User Auth */}
+            {isAuthenticated && user ? (
+              <>
+                {/* User Profile Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="flex items-center space-x-2">
+                      <img 
+                        src={user.picture} 
+                        alt={user.name}
+                        className="w-6 h-6 rounded-full"
+                      />
+                      <span className="text-sm">{user.name.split(' ')[0]}</span>
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <div className="px-3 py-2">
+                      <p className="text-sm font-medium">{user.name}</p>
+                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                      {user.role === 'admin' && (
+                        <Badge variant="secondary" className="mt-1 text-xs">Admin</Badge>
+                      )}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link to="/profile">
+                        <User className="w-4 h-4 mr-2" />
+                        Profile
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      onClick={logout} 
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 focus:bg-red-50 focus:text-red-700"
+                    >
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Logout
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Wallet Connection - Only show when logged in */}
+                {account ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {`${account.slice(0, 6)}...${account.slice(-4)}`}
+                        </Badge>
+                        <ChevronDown className="w-3 h-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64">
+                      <div className="px-3 py-2">
+                        <p className="text-sm font-medium">Connected Wallet</p>
+                        <p className="text-xs text-muted-foreground font-mono break-all">
+                          {account}
+                        </p>
+                      </div>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={copyAddress}>
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy Address
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleSwitchAccount} disabled={isConnecting}>
+                        <RefreshCw className={`w-4 h-4 mr-2 ${isConnecting ? 'animate-spin' : ''}`} />
+                        Switch Account
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={openWalletModal}>
+                        <Settings className="w-4 h-4 mr-2" />
+                        Wallet Settings
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={disconnectWallet} className="text-red-600">
+                        <LogOut className="w-4 h-4 mr-2" />
+                        Disconnect
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Button onClick={openWalletModal} disabled={isConnecting} variant="outline" className="flex items-center space-x-2">
+                    <Wallet className="w-4 h-4" />
+                    <span>{isConnecting ? 'Connecting...' : 'Connect Wallet'}</span>
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  <div className="px-3 py-2">
-                    <p className="text-sm font-medium">Connected Wallet</p>
-                    <p className="text-xs text-muted-foreground font-mono break-all">
-                      {account}
-                    </p>
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={copyAddress}>
-                    <Copy className="w-4 h-4 mr-2" />
-                    Copy Address
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleSwitchAccount} disabled={isConnecting}>
-                    <RefreshCw className={`w-4 h-4 mr-2 ${isConnecting ? 'animate-spin' : ''}`} />
-                    Switch Account
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={openWalletModal}>
-                    <Settings className="w-4 h-4 mr-2" />
-                    Wallet Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={disconnectWallet} className="text-red-600">
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Disconnect
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                )}
+              </>
             ) : (
-              <Button onClick={openWalletModal} disabled={isConnecting} className="flex items-center space-x-2">
-                <Wallet className="w-4 h-4" />
-                <span>{isConnecting ? 'Connecting...' : 'Connect Wallet'}</span>
+              <Button asChild className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white">
+                <Link to="/login">Login with Google</Link>
               </Button>
             )}
+
           </div>
 
           {/* Mobile menu button */}
@@ -160,66 +212,96 @@ const Navbar: React.FC = () => {
               ))}
               
               <div className="pt-4 border-t">
-                {account ? (
-                  <div className="space-y-3">
+                {isAuthenticated && user ? (
+                  <div className="space-y-4">
+                    {/* User Info */}
                     <div className="p-3 bg-muted rounded-lg">
-                      <p className="text-sm font-medium mb-1">Connected Wallet</p>
-                      <Badge variant="secondary" className="font-mono text-xs">
-                        {`${account.slice(0, 6)}...${account.slice(-4)}`}
-                      </Badge>
+                      <div className="flex items-center space-x-3">
+                        <img 
+                          src={user.picture} 
+                          alt={user.name}
+                          className="w-8 h-8 rounded-full"
+                        />
+                        <div>
+                          <p className="text-sm font-medium">{user.name}</p>
+                          <p className="text-xs text-muted-foreground">{user.email}</p>
+                        </div>
+                      </div>
                     </div>
-                    
-                    <div className="space-y-2">
+
+                    {/* Wallet Section - Only when logged in */}
+                    {account ? (
+                      <div className="space-y-3">
+                        <div className="p-3 bg-muted rounded-lg">
+                          <p className="text-sm font-medium mb-1">Connected Wallet</p>
+                          <Badge variant="secondary" className="font-mono text-xs">
+                            {`${account.slice(0, 6)}...${account.slice(-4)}`}
+                          </Badge>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={copyAddress}
+                            className="w-full justify-start"
+                          >
+                            <Copy className="w-4 h-4 mr-2" />
+                            Copy Address
+                          </Button>
+                          
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={handleSwitchAccount}
+                            disabled={isConnecting}
+                            className="w-full justify-start"
+                          >
+                            <RefreshCw className={`w-4 h-4 mr-2 ${isConnecting ? 'animate-spin' : ''}`} />
+                            Switch Account
+                          </Button>
+                          
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={disconnectWallet}
+                            className="w-full justify-start text-red-600 hover:text-red-700"
+                          >
+                            <LogOut className="w-4 h-4 mr-2" />
+                            Disconnect Wallet
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
                       <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={copyAddress}
-                        className="w-full justify-start"
-                      >
-                        <Copy className="w-4 h-4 mr-2" />
-                        Copy Address
-                      </Button>
-                      
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={handleSwitchAccount}
+                        onClick={openWalletModal} 
                         disabled={isConnecting}
-                        className="w-full justify-start"
+                        variant="outline"
+                        className="w-full flex items-center justify-center space-x-2"
                       >
-                        <RefreshCw className={`w-4 h-4 mr-2 ${isConnecting ? 'animate-spin' : ''}`} />
-                        Switch Account
+                        <Wallet className="w-4 h-4" />
+                        <span>{isConnecting ? 'Connecting...' : 'Connect Wallet'}</span>
                       </Button>
-                      
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={openWalletModal}
-                        className="w-full justify-start"
-                      >
-                        <Settings className="w-4 h-4 mr-2" />
-                        Wallet Settings
-                      </Button>
-                      
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={disconnectWallet}
-                        className="w-full justify-start text-red-600 hover:text-red-700"
-                      >
-                        <LogOut className="w-4 h-4 mr-2" />
-                        Disconnect
-                      </Button>
-                    </div>
+                    )}
+
+                    {/* Logout Button */}
+                    <Button 
+                      onClick={logout}
+                      variant="outline"
+                      className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Logout
+                    </Button>
                   </div>
                 ) : (
                   <Button 
-                    onClick={openWalletModal} 
-                    disabled={isConnecting}
-                    className="w-full flex items-center justify-center space-x-2"
+                    asChild
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
                   >
-                    <Wallet className="w-4 h-4" />
-                    <span>{isConnecting ? 'Connecting...' : 'Connect Wallet'}</span>
+                    <Link to="/login" onClick={() => setIsOpen(false)}>
+                      Login with Google
+                    </Link>
                   </Button>
                 )}
               </div>

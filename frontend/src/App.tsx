@@ -8,6 +8,7 @@ import Footer from './components/layout/Footer';
 
 // Pages
 import LandingPage from './pages/LandingPage';
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import RegisterLand from './pages/RegisterLand';
 import MyLands from './pages/MyLands';
@@ -16,13 +17,15 @@ import Profile from './pages/Profile';
 import AdminPanel from './pages/AdminPanel';
 
 // Contexts
+import { AuthProvider } from './contexts/AuthContext';
 import { Web3Provider } from './contexts/Web3Context';
 import { LandProvider } from './contexts/LandContext';
 
 const App: React.FC = () => {
   return (
-    <Web3Provider>
-      <LandProvider>
+    <AuthProvider>
+      <Web3Provider>
+        <LandProvider>
         <Router>
           <div className="min-h-screen bg-background text-foreground">
             {/* Navigation */}
@@ -32,6 +35,7 @@ const App: React.FC = () => {
             <main>
               <Routes>
                 <Route path="/" element={<LandingPage />} />
+                <Route path="/login" element={<Login />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/register" element={<RegisterLand />} />
                 <Route path="/my-lands" element={<MyLands />} />
@@ -61,6 +65,7 @@ const App: React.FC = () => {
         </Router>
       </LandProvider>
     </Web3Provider>
+  </AuthProvider>
   );
 };
 

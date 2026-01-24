@@ -3,8 +3,11 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const session = require('express-session');
+require('dotenv').config(); // Load env first
+
+const passport = require('./config/passport'); // Then load passport
 const { blockchainService } = require('./utils/blockchain');
-require('dotenv').config();
 
 const app = express();
 
@@ -15,6 +18,22 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'landchain-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // Set to true in production with HTTPS
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Passport middleware
+app.use(passport.initialize());
+app.use(passport.session());
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -34,6 +53,7 @@ blockchainService.initialize()
   });
 
 // Routes
+app.use('/api/auth', require('./routes/authRoute'));
 app.use('/api/upload', require('./routes/uploadRoute'));
 app.use('/api/land', require('./routes/landRoute'));
 app.use('/api/documents', require('./routes/documentRoute'));

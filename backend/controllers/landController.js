@@ -6,6 +6,9 @@ const { blockchainService } = require('../utils/blockchain');
 exports.registerLand = async (req, res) => {
   try {
     const {
+      userId,
+      userEmail,
+      userGoogleId,
       owner,
       ownerName,
       ownerPhone,
@@ -23,6 +26,9 @@ exports.registerLand = async (req, res) => {
 
     const land = new Land({
       tokenId: nextTokenId,
+      userId,
+      userEmail,
+      userGoogleId,
       owner,
       ownerName,
       ownerPhone,
@@ -36,7 +42,7 @@ exports.registerLand = async (req, res) => {
 
     await land.save();
 
-    console.log(`✅ Land registered successfully with Token ID: ${nextTokenId}`);
+    console.log(`✅ Land registered successfully with Token ID: ${nextTokenId} for User: ${userId}`);
 
     res.json({
       success: true,
@@ -90,15 +96,72 @@ exports.getLand = async (req, res) => {
 
 exports.getAllLands = async (req, res) => {
   try {
-    const lands = await Land.find().sort({ createdAt: -1 });
+    const { owner, userId, email, googleId } = req.query;
+    
+    // Build query filter - PRIORITY ORDER: email > googleId > userId > owner
+    let filter = {};
+    let filterDescription = 'All lands';
+    
+    if (email) {
+      // HIGHEST PRIORITY: Find user by email and get their lands
+      const User = require('../models/User');
+      const user = await User.findOne({ email });
+      if (user) {
+        filter.userId = user._id;
+        filterDescription = `Filtered by email: ${email}`;
+        console.log(`🔍 Email-based filtering for: ${email} → userId: ${user._id}`);
+      } else {
+        // No user found with this email, return empty
+        console.log(`⚠️ No user found with email: ${email}`);
+        return res.json({
+          success: true,
+          count: 0,
+          lands: [],
+          filter: `No user found with email: ${email}`
+        });
+      }
+    } else if (googleId) {
+      // SECOND PRIORITY: Find user by googleId and get their lands
+      const User = require('../models/User');
+      const user = await User.findOne({ googleId });
+      if (user) {
+        filter.userId = user._id;
+        filterDescription = `Filtered by googleId: ${googleId}`;
+        console.log(`🔍 GoogleId-based filtering for: ${googleId} → userId: ${user._id}`);
+      } else {
+        console.log(`⚠️ No user found with googleId: ${googleId}`);
+        return res.json({
+          success: true,
+          count: 0,
+          lands: [],
+          filter: `No user found with googleId: ${googleId}`
+        });
+      }
+    } else if (userId) {
+      // THIRD PRIORITY: Direct userId filtering
+      filter.userId = userId;
+      filterDescription = `Filtered by userId: ${userId}`;
+      console.log(`🔍 UserId-based filtering: ${userId}`);
+    } else if (owner) {
+      // LOWEST PRIORITY: Wallet address filtering (only for admin/fallback)
+      filter.owner = new RegExp(`^${owner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      filterDescription = `Filtered by owner: ${owner}`;
+      console.log(`⚠️ Wallet-based filtering (should be avoided): ${owner}`);
+    }
+
+    const lands = await Land.find(filter).sort({ createdAt: -1 });
+
+    console.log(`📋 Fetched ${lands.length} lands - ${filterDescription}`);
 
     res.json({
       success: true,
       count: lands.length,
-      lands: lands
+      lands: lands,
+      filter: filterDescription
     });
 
   } catch (error) {
+    console.error('❌ Error in getAllLands:', error);
     res.status(500).json({
       success: false,
       error: error.message

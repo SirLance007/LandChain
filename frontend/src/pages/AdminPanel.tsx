@@ -22,7 +22,7 @@ const AdminPanel: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    getAllLands().then(() => {
+    getAllLands().then(() => { // Fetch ALL lands for admin panel (no user filter)
       console.log('Admin Panel: Loaded lands:', lands.map(land => ({ 
         id: land._id, 
         tokenId: land.tokenId, 
@@ -50,7 +50,7 @@ const AdminPanel: React.FC = () => {
 
       if (response.data.success) {
         toast.success(`Property #${tokenId} ${status} successfully!`);
-        await getAllLands(); // Refresh the list
+        await getAllLands(); // Refresh all lands for admin panel
       } else {
         toast.error('Failed to update status');
       }
