@@ -25,6 +25,7 @@ const propertyTransferSchema = new mongoose.Schema({
   },
   sellerSignature: String,
   sellerSignedAt: Date,
+  sellerWalletAddress: String,
   
   // Buyer Info
   buyerId: String,

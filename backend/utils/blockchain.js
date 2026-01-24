@@ -60,6 +60,53 @@ class BlockchainService {
     }
   }
 
+  async transferLandNFTWithUserWallets(tokenId, fromAddress, toAddress) {
+    if (!this.isInitialized) {
+      throw new Error('Blockchain service not initialized');
+    }
+
+    try {
+      console.log('🔄 Transferring NFT with user wallets...', {
+        tokenId,
+        from: fromAddress,
+        to: toAddress
+      });
+
+      // Note: This is a simplified version. In a real implementation, 
+      // the seller would need to sign the transaction from their wallet.
+      // For now, we'll use the admin wallet but record the correct addresses.
+      
+      // Call smart contract transfer function (using admin wallet for gas)
+      const tx = await this.contract.transferLand(tokenId, toAddress);
+
+      console.log('📝 Transfer transaction submitted:', tx.hash);
+
+      // Wait for confirmation
+      const receipt = await tx.wait();
+      console.log('✅ Transfer transaction confirmed:', receipt.hash);
+
+      // Extract transfer event
+      const transferEvent = receipt.logs.find(
+        log => log.fragment && log.fragment.name === 'LandTransferred'
+      );
+
+      return {
+        success: true,
+        transactionHash: receipt.hash,
+        blockNumber: receipt.blockNumber,
+        gasUsed: receipt.gasUsed.toString(),
+        from: fromAddress, // Record the actual seller address
+        to: toAddress,     // Record the actual buyer address
+        actualFrom: transferEvent ? transferEvent.args[1] : this.signer.address, // Admin wallet that paid gas
+        actualTo: transferEvent ? transferEvent.args[2] : toAddress
+      };
+
+    } catch (error) {
+      console.error('❌ NFT transfer with user wallets failed:', error);
+      throw new Error(`Blockchain transfer failed: ${error.message}`);
+    }
+  }
+
   async transferLandNFT(tokenId, newOwnerAddress) {
     if (!this.isInitialized) {
       throw new Error('Blockchain service not initialized');

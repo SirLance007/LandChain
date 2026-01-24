@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import WalletConnect from '../components/ui/wallet-connect';
 import { 
   Home, 
   User, 
@@ -12,9 +13,11 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
-  ArrowRight
+  ArrowRight,
+  Wallet
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useWeb3 } from '../contexts/Web3Context';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
 
@@ -24,6 +27,10 @@ interface TransferDetails {
     status: string;
     price?: number;
     expiresAt: string;
+    sellerWalletAddress?: string;
+    buyerWalletAddress?: string;
+    transactionHash?: string;
+    blockNumber?: number;
   };
   buyerEmail: string;
   property: {
@@ -46,9 +53,11 @@ const PropertyTransfer: React.FC = () => {
   const { transferKey } = useParams<{ transferKey: string }>();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
+  const { account, connectWallet, isConnecting } = useWeb3();
   const [transferDetails, setTransferDetails] = useState<TransferDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
+  const [connectedWallet, setConnectedWallet] = useState<string>('');
 
   const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
@@ -80,11 +89,20 @@ const PropertyTransfer: React.FC = () => {
   const handleConfirmTransfer = async () => {
     if (!user || !transferDetails) return;
     
+    // Check if wallet is connected
+    if (!account && !connectedWallet) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    
+    const walletAddress = account || connectedWallet;
+    
     setAccepting(true);
     try {
       const response = await axios.post(`${API_BASE_URL}/transfer/confirm`, {
         transferKey,
-        sellerSignature: `seller_signature_${Date.now()}` // TODO: Implement proper digital signature
+        sellerSignature: `seller_signature_${Date.now()}`, // TODO: Implement proper digital signature
+        sellerWalletAddress: walletAddress
       });
       
       if (response.data.success) {
@@ -109,12 +127,20 @@ const PropertyTransfer: React.FC = () => {
   const handleAcceptTransfer = async () => {
     if (!user || !transferDetails) return;
     
+    // Check if wallet is connected
+    if (!account && !connectedWallet) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    
+    const walletAddress = account || connectedWallet;
+    
     setAccepting(true);
     try {
       const response = await axios.post(`${API_BASE_URL}/transfer/accept`, {
         transferKey,
         buyerSignature: `buyer_signature_${Date.now()}`, // TODO: Implement proper digital signature
-        buyerWalletAddress: '0x...' // TODO: Get from Web3Context
+        buyerWalletAddress: walletAddress
       });
       
       if (response.data.success) {
@@ -321,25 +347,71 @@ const PropertyTransfer: React.FC = () => {
               </div>
               
               {isBuyer && transfer.status === 'pending' && !isExpired && (
-                <Button 
-                  onClick={handleAcceptTransfer}
-                  disabled={accepting}
-                  className="w-full"
-                >
-                  {accepting ? 'Accepting...' : 'Accept Transfer'}
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
+                <div className="space-y-4">
+                  {/* Wallet Connection for Buyer */}
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Wallet className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-blue-800">Connect Your Wallet</span>
+                    </div>
+                    <p className="text-xs text-blue-600 mb-3">
+                      Connect your MetaMask wallet to receive the property NFT
+                    </p>
+                    <WalletConnect 
+                      onWalletConnect={setConnectedWallet}
+                      currentAddress={account || connectedWallet}
+                    />
+                  </div>
+                  
+                  <Button 
+                    onClick={handleAcceptTransfer}
+                    disabled={accepting || (!account && !connectedWallet)}
+                    className="w-full"
+                  >
+                    {accepting ? 'Accepting...' : 'Accept Transfer'}
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                  
+                  {(!account && !connectedWallet) && (
+                    <p className="text-xs text-amber-600 text-center">
+                      ⚠️ Please connect your wallet to accept the transfer
+                    </p>
+                  )}
+                </div>
               )}
 
               {isSeller && transfer.status === 'buyer_accepted' && !isExpired && (
-                <Button 
-                  onClick={handleConfirmTransfer}
-                  disabled={accepting}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                >
-                  {accepting ? 'Confirming...' : 'Confirm Transfer'}
-                  <CheckCircle className="w-4 h-4 ml-2" />
-                </Button>
+                <div className="space-y-4">
+                  {/* Wallet Connection for Seller */}
+                  <div className="p-3 bg-green-50 rounded-lg">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Wallet className="w-4 h-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-800">Connect Your Wallet</span>
+                    </div>
+                    <p className="text-xs text-green-600 mb-3">
+                      Connect your MetaMask wallet to confirm the transfer
+                    </p>
+                    <WalletConnect 
+                      onWalletConnect={setConnectedWallet}
+                      currentAddress={account || connectedWallet}
+                    />
+                  </div>
+                  
+                  <Button 
+                    onClick={handleConfirmTransfer}
+                    disabled={accepting || (!account && !connectedWallet)}
+                    className="w-full bg-green-600 hover:bg-green-700"
+                  >
+                    {accepting ? 'Confirming...' : 'Confirm Transfer'}
+                    <CheckCircle className="w-4 h-4 ml-2" />
+                  </Button>
+                  
+                  {(!account && !connectedWallet) && (
+                    <p className="text-xs text-amber-600 text-center">
+                      ⚠️ Please connect your wallet to confirm the transfer
+                    </p>
+                  )}
+                </div>
               )}
               
               {transfer.status === 'buyer_accepted' && (
@@ -394,9 +466,29 @@ const PropertyTransfer: React.FC = () => {
                     <p className="text-xs text-green-500">
                       ⛓️ Blockchain transaction recorded
                     </p>
-                    {property.transactionHash && property.transactionHash !== 'simulated' && (
+                    {transfer.transactionHash && transfer.transactionHash !== 'simulated' && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-green-500">
+                          🔗 TX: {transfer.transactionHash.substring(0, 20)}...
+                        </p>
+                        <a 
+                          href={`https://testnet-explorer.monad.xyz/tx/${transfer.transactionHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-500 hover:text-blue-700 underline"
+                        >
+                          🔍 View on Monad Explorer
+                        </a>
+                      </div>
+                    )}
+                    {transfer.sellerWalletAddress && (
                       <p className="text-xs text-green-500">
-                        🔗 TX: {property.transactionHash.substring(0, 20)}...
+                        📤 From: {transfer.sellerWalletAddress.substring(0, 6)}...{transfer.sellerWalletAddress.substring(transfer.sellerWalletAddress.length - 4)}
+                      </p>
+                    )}
+                    {transfer.buyerWalletAddress && (
+                      <p className="text-xs text-green-500">
+                        📥 To: {transfer.buyerWalletAddress.substring(0, 6)}...{transfer.buyerWalletAddress.substring(transfer.buyerWalletAddress.length - 4)}
                       </p>
                     )}
                   </div>

@@ -140,7 +140,11 @@ const getTransferDetails = async (req, res) => {
         key: transfer.transferKey,
         status: transfer.status,
         price: transfer.price,
-        expiresAt: transfer.expiresAt
+        expiresAt: transfer.expiresAt,
+        sellerWalletAddress: transfer.sellerWalletAddress,
+        buyerWalletAddress: transfer.buyerWalletAddress,
+        transactionHash: transfer.transactionHash,
+        blockNumber: transfer.blockNumber
       },
       buyerEmail: transfer.buyerEmail, // Add buyer email for verification
       property: {
@@ -213,7 +217,7 @@ const acceptTransfer = async (req, res) => {
 // Seller confirms transfer
 const confirmTransfer = async (req, res) => {
   try {
-    const { transferKey, sellerSignature } = req.body;
+    const { transferKey, sellerSignature, sellerWalletAddress } = req.body;
     const sellerId = req.user._id.toString(); // Convert to string
     
     const transfer = await PropertyTransfer.findOne({ 
@@ -232,6 +236,7 @@ const confirmTransfer = async (req, res) => {
     // Update transfer with seller confirmation
     transfer.sellerSignature = sellerSignature;
     transfer.sellerSignedAt = new Date();
+    transfer.sellerWalletAddress = sellerWalletAddress;
     transfer.status = 'both_signed';
     
     await transfer.save();
@@ -279,20 +284,20 @@ const executeOwnershipTransfer = async (transfer) => {
     console.log(`📋 Transferring ownership:`);
     console.log(`   From: ${property.ownerName} (${property.userEmail})`);
     console.log(`   To: ${buyer.name} (${buyer.email})`);
+    console.log(`   Seller Wallet: ${transfer.sellerWalletAddress || 'Not provided'}`);
+    console.log(`   Buyer Wallet: ${transfer.buyerWalletAddress || 'Not provided'}`);
     
-    // Execute blockchain transfer if available
+    // Execute blockchain transfer if available and wallet addresses are provided
     let blockchainResult = null;
-    if (blockchainService.isConnected()) {
+    if (blockchainService.isConnected() && transfer.buyerWalletAddress && transfer.sellerWalletAddress) {
       try {
-        console.log('🔗 Executing blockchain transfer...');
+        console.log('🔗 Executing blockchain transfer with user wallets...');
         
-        // Get buyer's wallet address (for now using a placeholder)
-        const buyerWalletAddress = buyer.walletAddress || '0x1d524D361EF86057dF3583c87D1815032fdb8dba';
-        
-        // Execute actual blockchain transfer
-        blockchainResult = await blockchainService.transferLandNFT(
+        // Execute actual blockchain transfer using user wallets
+        blockchainResult = await blockchainService.transferLandNFTWithUserWallets(
           transfer.propertyId,
-          buyerWalletAddress
+          transfer.sellerWalletAddress,
+          transfer.buyerWalletAddress
         );
         
         console.log('✅ Blockchain transfer successful:', blockchainResult);
@@ -303,14 +308,17 @@ const executeOwnershipTransfer = async (transfer) => {
         console.log('📝 Continuing with database update...');
       }
     } else {
-      console.log('⚠️ Blockchain service not available, updating database only');
+      console.log('⚠️ Blockchain service not available or wallet addresses missing, updating database only');
+      console.log('   Blockchain connected:', blockchainService.isConnected());
+      console.log('   Buyer wallet:', !!transfer.buyerWalletAddress);
+      console.log('   Seller wallet:', !!transfer.sellerWalletAddress);
     }
     
     // Transfer ownership - Update all owner fields
     property.userId = transfer.buyerId;
     property.userEmail = buyer.email;
     property.userGoogleId = buyer.googleId;
-    property.owner = buyer.walletAddress || buyer.email;
+    property.owner = transfer.buyerWalletAddress || buyer.email;
     property.ownerName = buyer.name;
     property.ownerPhone = ''; // Buyer can update later
     
@@ -336,6 +344,7 @@ const executeOwnershipTransfer = async (transfer) => {
     
     console.log(`✅ Property #${transfer.propertyId} ownership successfully transferred!`);
     console.log(`   New Owner: ${buyer.name} (${buyer.email})`);
+    console.log(`   New Owner Wallet: ${transfer.buyerWalletAddress || 'Not provided'}`);
     
     if (blockchainResult) {
       console.log(`🔗 Blockchain Result:`, blockchainResult);
