@@ -7,9 +7,15 @@ const LAND_NFT_ABI = [
   "function addRegistrar(address registrar) public",
   "function removeRegistrar(address registrar) public", 
   "function isRegistrar(address account) public view returns (bool)",
-  "function adminTransfer(uint256 tokenId, address to) public", // NEW: Force transfer
-  "function adminBatchTransfer(uint256[] calldata tokenIds, address to) public", // NEW: Batch transfer
-  "function adminClaimOwnership(uint256 tokenId) public", // NEW: Claim ownership
+  "function adminTransfer(uint256 tokenId, address to) public", // Admin force transfer
+  "function adminBatchTransfer(uint256[] calldata tokenIds, address to) public", // Batch transfer
+  "function adminClaimOwnership(uint256 tokenId) public", // Claim ownership
+  
+  // Signature-based transfer functions
+  "function executeSignatureTransfer(tuple(uint256 tokenId, address from, address to, uint256 nonce, uint256 deadline) auth, bytes signature) public",
+  "function getTransferAuthHash(tuple(uint256 tokenId, address from, address to, uint256 nonce, uint256 deadline) auth) public view returns (bytes32)",
+  "function getNonce(address user) public view returns (uint256)",
+  "function isSignatureUsed(bytes32 signatureHash) public view returns (bool)",
   
   // Minting (restricted to registrars)
   "function mintLand(address to, string memory ipfsHash, int256 lat, int256 lon, uint256 area) public returns (uint256)",
@@ -30,7 +36,8 @@ const LAND_NFT_ABI = [
   
   // Events
   "event LandRegistered(uint256 indexed tokenId, address indexed owner, string ipfsHash, bytes32 indexed landHash, uint256 timestamp)",
-  "event LandTransferred(uint256 indexed tokenId, address indexed from, address indexed to, bytes32 indexed transferHash, uint256 timestamp)",
+  "event LandTransferred(uint256 indexed tokenId, address indexed from, address indexed to, bytes32 transferHash, uint256 timestamp)",
+  "event SignatureTransferExecuted(uint256 indexed tokenId, address indexed from, address indexed to, bytes32 transferHash, bytes32 signatureHash, uint256 timestamp)",
   "event RegistrarAdded(address indexed registrar, address indexed addedBy)",
   "event RegistrarRemoved(address indexed registrar, address indexed removedBy)"
 ];
@@ -348,49 +355,183 @@ class BlockchainService {
     }
   }
 
-  async adminClaimNFT(tokenId) {
+  async executeSignatureTransfer(tokenId, fromAddress, toAddress, signature, nonce, deadline) {
     if (!this.isInitialized) {
       throw new Error('Blockchain service not initialized');
     }
 
     try {
-      console.log('🔥 ADMIN CLAIMING NFT OWNERSHIP for management...');
-      console.log('🔄 Claiming NFT #' + tokenId);
+      console.log('🔏 SIGNATURE-BASED TRANSFER - User-to-User Direct Transfer!');
+      console.log('🔄 Executing signature transfer...', {
+        tokenId,
+        from: fromAddress,
+        to: toAddress,
+        nonce,
+        deadline: new Date(deadline * 1000)
+      });
 
-      const currentOwner = await this.contract.ownerOf(tokenId);
-      const contractOwner = await this.contract.owner();
+      // Prepare transfer authorization struct
+      const auth = {
+        tokenId: tokenId,
+        from: fromAddress,
+        to: toAddress,
+        nonce: nonce,
+        deadline: deadline
+      };
+
+      console.log('📋 Transfer authorization:', auth);
+      console.log('🔏 Signature:', signature);
+
+      // Estimate gas for the signature transfer
+      const gasEstimate = await this.contract.executeSignatureTransfer.estimateGas(auth, signature);
+      console.log('⛽ Estimated gas:', gasEstimate.toString());
+
+      // Execute signature transfer
+      const tx = await this.contract.executeSignatureTransfer(auth, signature, {
+        gasLimit: gasEstimate * 120n / 100n // Add 20% buffer
+      });
+
+      console.log('📝 Signature transfer transaction submitted:', tx.hash);
+      console.log('⏳ Waiting for confirmation...');
+
+      // Wait for confirmation
+      const receipt = await tx.wait();
+      console.log('✅ Signature transfer confirmed:', receipt.hash);
+      console.log('📦 Block number:', receipt.blockNumber);
+      console.log('⛽ Gas used:', receipt.gasUsed.toString());
+
+      // Verify the transfer worked
+      const newOwner = await this.contract.ownerOf(tokenId);
+      console.log('🔍 Verified new owner:', newOwner);
+
+      // Extract SignatureTransferExecuted event
+      let transferEvent = null;
+      let transferHash = null;
+      let signatureHash = null;
       
-      console.log('👤 Current NFT owner:', currentOwner);
-      console.log('🔑 Contract owner (admin):', contractOwner);
-      
-      if (currentOwner.toLowerCase() === contractOwner.toLowerCase()) {
-        console.log('✅ Admin already owns this NFT');
-        return {
-          success: true,
-          message: 'Admin already owns this NFT',
-          alreadyOwned: true
-        };
+      for (const log of receipt.logs) {
+        try {
+          const parsedLog = this.contract.interface.parseLog(log);
+          if (parsedLog && parsedLog.name === 'SignatureTransferExecuted') {
+            transferEvent = parsedLog;
+            transferHash = parsedLog.args[3]; // transferHash
+            signatureHash = parsedLog.args[4]; // signatureHash
+            break;
+          }
+        } catch (e) {
+          // Skip logs that can't be parsed
+        }
       }
 
-      // Claim ownership
-      const tx = await this.contract.adminClaimOwnership(tokenId);
-      console.log('📝 Claim ownership transaction submitted:', tx.hash);
-
-      const receipt = await tx.wait();
-      console.log('✅ Ownership claimed successfully:', receipt.hash);
-
-      return {
+      const result = {
         success: true,
         transactionHash: receipt.hash,
         blockNumber: receipt.blockNumber,
-        from: currentOwner,
-        to: contractOwner,
-        claimed: true
+        gasUsed: receipt.gasUsed.toString(),
+        from: transferEvent ? transferEvent.args[1] : fromAddress,
+        to: transferEvent ? transferEvent.args[2] : toAddress,
+        verifiedNewOwner: newOwner,
+        transferHash: transferHash, // Unique transfer hash from contract
+        signatureHash: signatureHash, // Signature hash used
+        uniqueTransfer: true, // This is a real blockchain transfer
+        signatureTransfer: true, // This was a signature-based transfer
+        userToUser: true // Direct user-to-user transfer
+      };
+
+      console.log('🎉 SIGNATURE TRANSFER completed successfully:', result);
+      console.log('🔏 This was a direct user-to-user transfer using signatures!');
+      return result;
+
+    } catch (error) {
+      console.error('❌ Signature transfer failed:', error);
+      
+      // Provide more specific error messages
+      if (error.message.includes('signature expired')) {
+        throw new Error('Signature transfer failed: Signature has expired');
+      } else if (error.message.includes('invalid signature')) {
+        throw new Error('Signature transfer failed: Invalid signature provided');
+      } else if (error.message.includes('signature already used')) {
+        throw new Error('Signature transfer failed: Signature has already been used');
+      } else if (error.message.includes('invalid nonce')) {
+        throw new Error('Signature transfer failed: Invalid nonce - signature may be outdated');
+      } else if (error.message.includes('from is not owner')) {
+        throw new Error('Signature transfer failed: Signer is not the current owner');
+      } else {
+        throw new Error(`Signature transfer failed: ${error.message}`);
+      }
+    }
+  }
+
+  async generateTransferSignature(tokenId, fromAddress, toAddress, privateKey, deadline) {
+    if (!this.isInitialized) {
+      throw new Error('Blockchain service not initialized');
+    }
+
+    try {
+      console.log('🔏 Generating transfer signature...');
+      
+      // Get current nonce for the from address
+      const nonce = await this.contract.getNonce(fromAddress);
+      console.log('📋 Current nonce for', fromAddress, ':', nonce.toString());
+
+      // Prepare transfer authorization
+      const auth = {
+        tokenId: tokenId,
+        from: fromAddress,
+        to: toAddress,
+        nonce: Number(nonce),
+        deadline: deadline
+      };
+
+      // Get the hash that needs to be signed
+      const authHash = await this.contract.getTransferAuthHash(auth);
+      console.log('📋 Authorization hash:', authHash);
+
+      // Create wallet from private key to sign
+      const wallet = new ethers.Wallet(privateKey);
+      
+      // Sign the hash
+      const signature = await wallet.signMessage(ethers.getBytes(authHash));
+      console.log('🔏 Generated signature:', signature);
+
+      return {
+        auth: auth,
+        signature: signature,
+        authHash: authHash,
+        signer: wallet.address
       };
 
     } catch (error) {
-      console.error('❌ Admin claim failed:', error);
-      throw new Error(`Admin claim failed: ${error.message}`);
+      console.error('❌ Signature generation failed:', error);
+      throw new Error(`Signature generation failed: ${error.message}`);
+    }
+  }
+
+  async getUserNonce(address) {
+    if (!this.isInitialized) {
+      throw new Error('Blockchain service not initialized');
+    }
+
+    try {
+      const nonce = await this.contract.getNonce(address);
+      return Number(nonce);
+    } catch (error) {
+      console.error('❌ Get nonce failed:', error);
+      return 0;
+    }
+  }
+
+  async isSignatureUsed(signatureHash) {
+    if (!this.isInitialized) {
+      throw new Error('Blockchain service not initialized');
+    }
+
+    try {
+      const used = await this.contract.isSignatureUsed(signatureHash);
+      return used;
+    } catch (error) {
+      console.error('❌ Check signature used failed:', error);
+      return false;
     }
   }
 

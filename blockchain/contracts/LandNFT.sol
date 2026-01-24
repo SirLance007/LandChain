@@ -35,6 +35,28 @@ contract LandNFT is ERC721, Ownable, AccessControl {
     mapping(uint256 => TransferRecord[]) public transferHistory; // Track all transfers per token
     mapping(bytes32 => uint256) public transferHashToTokenId; // Map transfer hash to token ID
     
+    // Signature-based transfer system
+    mapping(bytes32 => bool) public usedSignatures; // Prevent signature replay
+    mapping(address => uint256) public nonces; // User nonces for signature uniqueness
+    
+    // Transfer authorization structure
+    struct TransferAuthorization {
+        uint256 tokenId;
+        address from;
+        address to;
+        uint256 nonce;
+        uint256 deadline;
+    }
+    
+    event SignatureTransferExecuted(
+        uint256 indexed tokenId,
+        address indexed from,
+        address indexed to,
+        bytes32 transferHash,
+        bytes32 signatureHash,
+        uint256 timestamp
+    );
+    
     event LandRegistered(
         uint256 indexed tokenId,
         address indexed owner,
@@ -333,6 +355,112 @@ contract LandNFT is ERC721, Ownable, AccessControl {
     function getTransferCount(uint256 tokenId) public view returns (uint256) {
         require(_ownerOf(tokenId) != address(0), "LandNFT: land not registered");
         return transferHistory[tokenId].length;
+    }
+    
+    /**
+     * @dev Generate hash for transfer authorization
+     * @param auth Transfer authorization struct
+     */
+    function getTransferAuthHash(TransferAuthorization memory auth) public view returns (bytes32) {
+        return keccak256(abi.encodePacked(
+            "\x19\x01", // EIP-191 prefix
+            block.chainid,
+            address(this),
+            auth.tokenId,
+            auth.from,
+            auth.to,
+            auth.nonce,
+            auth.deadline
+        ));
+    }
+    
+    /**
+     * @dev Execute transfer with signature (receiver submits)
+     * @param auth Transfer authorization details
+     * @param signature Signature from the token owner (sender)
+     */
+    function executeSignatureTransfer(
+        TransferAuthorization memory auth,
+        bytes memory signature
+    ) public {
+        require(block.timestamp <= auth.deadline, "LandNFT: signature expired");
+        require(auth.to != address(0), "LandNFT: invalid recipient");
+        require(_ownerOf(auth.tokenId) == auth.from, "LandNFT: from is not owner");
+        require(nonces[auth.from] == auth.nonce, "LandNFT: invalid nonce");
+        
+        // Generate hash for signature verification
+        bytes32 authHash = getTransferAuthHash(auth);
+        require(!usedSignatures[authHash], "LandNFT: signature already used");
+        
+        // Verify signature
+        address signer = recoverSigner(authHash, signature);
+        require(signer == auth.from, "LandNFT: invalid signature");
+        
+        // Mark signature as used and increment nonce
+        usedSignatures[authHash] = true;
+        nonces[auth.from]++;
+        
+        // Execute the transfer
+        _update(auth.to, auth.tokenId, address(0));
+        
+        // Generate unique transfer hash for this signature-based transfer
+        bytes32 transferHash = _generateTransferHash(auth.tokenId, auth.from, auth.to, block.timestamp);
+        
+        // Record transfer in history
+        transferHistory[auth.tokenId].push(TransferRecord({
+            from: auth.from,
+            to: auth.to,
+            timestamp: block.timestamp,
+            transferHash: transferHash
+        }));
+        transferHashToTokenId[transferHash] = auth.tokenId;
+        
+        // Emit signature transfer event
+        emit SignatureTransferExecuted(
+            auth.tokenId,
+            auth.from,
+            auth.to,
+            transferHash,
+            authHash,
+            block.timestamp
+        );
+    }
+    
+    /**
+     * @dev Recover signer from signature
+     * @param hash Message hash
+     * @param signature Signature bytes
+     */
+    function recoverSigner(bytes32 hash, bytes memory signature) internal pure returns (address) {
+        require(signature.length == 65, "LandNFT: invalid signature length");
+        
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        
+        assembly {
+            r := mload(add(signature, 32))
+            s := mload(add(signature, 64))
+            v := byte(0, mload(add(signature, 96)))
+        }
+        
+        return ecrecover(hash, v, r, s);
+    }
+    
+    /**
+     * @dev Get current nonce for an address
+     * @param user Address to check nonce for
+     */
+    function getNonce(address user) public view returns (uint256) {
+        return nonces[user];
+    }
+    
+    /**
+     * @dev Check if signature hash has been used
+     * @param signatureHash Hash to check
+     */
+    function isSignatureUsed(bytes32 signatureHash) public view returns (bool) {
+        return usedSignatures[signatureHash];
     }
     
     /**
