@@ -15,6 +15,7 @@ import MyLands from './pages/MyLands';
 import LandDetails from './pages/LandDetails';
 import Profile from './pages/Profile';
 import AdminPanel from './pages/AdminPanel';
+import PropertyTransfer from './pages/PropertyTransfer';
 
 // Contexts
 import { AuthProvider } from './contexts/AuthContext';
@@ -42,6 +43,7 @@ const App: React.FC = () => {
                 <Route path="/land/:tokenId" element={<LandDetails />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/admin" element={<AdminPanel />} />
+                <Route path="/transfer/:transferKey" element={<PropertyTransfer />} />
               </Routes>
             </main>
             

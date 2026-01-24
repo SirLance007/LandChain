@@ -2,34 +2,97 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { 
-  Search, 
-  Filter, 
-  SortAsc, 
-  Eye, 
-  MapPin, 
-  Calendar, 
   Home,
-  CheckCircle,
-  Clock,
-  AlertCircle,
   Plus
 } from 'lucide-react';
 import { useLand } from '../contexts/LandContext';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from 'react-hot-toast';
+import TransferDialog from '../components/ui/transfer-dialog';
 
 const MyLands: React.FC = () => {
   const { lands, loading, getAllLands } = useLand();
-  const { account } = useWeb3();
   const { user, isAuthenticated } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('newest');
+  const [transferring, setTransferring] = useState<number | null>(null);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
+  const [pendingTransfers, setPendingTransfers] = useState<any[]>([]);
+
+  const handleTransferProperty = (tokenId: number) => {
+    setSelectedPropertyId(tokenId);
+    setTransferDialogOpen(true);
+  };
+
+  const fetchPendingTransfers = async () => {
+    if (!user) return;
+    
+    try {
+      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      const response = await fetch(`${API_BASE_URL}/transfer/pending`, {
+        credentials: 'include'
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        setPendingTransfers(data.transfers || []);
+      }
+    } catch (error) {
+      console.error('Error fetching pending transfers:', error);
+    }
+  };
+
+  const handleTransferSubmit = async (buyerEmail: string, price?: number) => {
+    if (!user || !selectedPropertyId) return;
+    
+    setTransferring(selectedPropertyId);
+    try {
+      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      const response = await fetch(`${API_BASE_URL}/transfer/initiate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          propertyId: selectedPropertyId,
+          buyerEmail,
+          price
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast.success('Transfer key generated successfully!');
+        // Refresh lands and pending transfers
+        getAllLands(undefined, undefined, user.email);
+        fetchPendingTransfers();
+        return data; // Return the data to the dialog
+      } else {
+        toast.error(data.error || 'Failed to generate transfer key');
+        throw new Error(data.error);
+      }
+    } catch (error) {
+      console.error('Transfer error:', error);
+      toast.error('Failed to initiate transfer');
+      throw error;
+    } finally {
+      setTransferring(null);
+    }
+  };
 
   useEffect(() => {
     // Use ONLY email-based filtering for proper user isolation
     if (isAuthenticated && user && lands.length === 0) {
       getAllLands(undefined, undefined, user.email); // Remove wallet address completely
+    }
+    
+    // Fetch pending transfers
+    if (isAuthenticated && user) {
+      fetchPendingTransfers();
     }
   }, [isAuthenticated, user?.email]); // Remove account dependency
 
@@ -47,40 +110,9 @@ const MyLands: React.FC = () => {
       
       return matchesSearch && matchesStatus;
     })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'newest':
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        case 'oldest':
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        case 'area-high':
-          return b.area - a.area;
-        case 'area-low':
-          return a.area - b.area;
-        case 'tokenId':
-          return a.tokenId - b.tokenId;
-        default:
-          return 0;
-      }
-    });
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'verified': return 'text-green-400 bg-green-400/10 border-green-400/30';
-      case 'pending': return 'text-orange-400 bg-orange-400/10 border-orange-400/30';
-      case 'rejected': return 'text-red-400 bg-red-400/10 border-red-400/30';
-      default: return 'text-gray-400 bg-gray-400/10 border-gray-400/30';
-    }
-  };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'verified': return <CheckCircle size={16} />;
-      case 'pending': return <Clock size={16} />;
-      case 'rejected': return <AlertCircle size={16} />;
-      default: return <Clock size={16} />;
-    }
-  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -99,29 +131,21 @@ const MyLands: React.FC = () => {
 
   if (!isAuthenticated) {
     return (
-      <div className="page-container-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="glass-card text-center max-w-md mx-auto"
-        >
-          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-r from-blockchain-blue to-blockchain-green p-5">
-            <Home className="w-full h-full text-white" />
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 text-center max-w-md mx-auto">
+          <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-r from-blue-100 to-purple-100 rounded-full flex items-center justify-center">
+            <Home className="w-10 h-10 text-blue-600" />
           </div>
-          <h2 className="text-2xl font-bold mb-4">Login Required</h2>
-          <p className="text-gray-400 mb-6">
-            Please login to view your registered properties.
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Login Required</h2>
+          <p className="text-gray-600 mb-6">
+            Please login to view and manage your registered properties.
           </p>
           <Link to="/login">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="btn-primary"
-            >
+            <button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200">
               Login Now
-            </motion.button>
+            </button>
           </Link>
-        </motion.div>
+        </div>
       </div>
     );
   }
@@ -131,260 +155,359 @@ const MyLands: React.FC = () => {
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="min-h-screen pb-10 page-container"
+      className="min-h-screen bg-gray-50 pb-10 page-container"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
+        {/* Beautiful Header */}
         <motion.div variants={itemVariants} className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="font-orbitron text-3xl md:text-4xl font-bold mb-2">
-                My <span className="gradient-text">Properties</span>
-              </h1>
-              <p className="text-gray-400">
-                {user?.name}, manage and track your registered properties
-              </p>
-            </div>
-            <div className="hidden md:block">
-              <div className="text-right">
-                <p className="text-sm font-medium text-white">{lands.length} Properties</p>
-                <p className="text-xs text-gray-400">Total registered</p>
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-4xl font-bold text-gray-900 mb-2">My Properties</h1>
+                <p className="text-gray-600 text-lg">
+                  {lands.length} {lands.length === 1 ? 'property' : 'properties'} registered on blockchain
+                </p>
               </div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Filters and Search */}
-        <motion.div variants={itemVariants} className="glass-card mb-8">
-          <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
-            {/* Search */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-              <input
-                type="text"
-                placeholder="Search by name, token ID, or area..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="input-field pl-12 w-full"
-              />
-            </div>
-
-            <div className="flex items-center space-x-4">
-              {/* Status Filter */}
-              <div className="relative">
-                <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="input-field pl-10 pr-8 appearance-none cursor-pointer"
-                >
-                  <option value="all">All Status</option>
-                  <option value="verified">Verified</option>
-                  <option value="pending">Pending</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
-
-              {/* Sort */}
-              <div className="relative">
-                <SortAsc className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="input-field pl-10 pr-8 appearance-none cursor-pointer"
-                >
-                  <option value="newest">Newest First</option>
-                  <option value="oldest">Oldest First</option>
-                  <option value="area-high">Area (High to Low)</option>
-                  <option value="area-low">Area (Low to High)</option>
-                  <option value="tokenId">Token ID</option>
-                </select>
-              </div>
-
-              {/* Add New Property */}
               <Link to="/register">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="btn-primary flex items-center space-x-2"
-                >
-                  <Plus size={18} />
-                  <span className="hidden sm:inline">Register New</span>
-                </motion.button>
+                <button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 shadow-lg transition-all duration-200">
+                  <Plus size={20} />
+                  <span>Add New Property</span>
+                </button>
               </Link>
             </div>
           </div>
         </motion.div>
 
-        {/* Properties Grid/List */}
+        {/* Pending Transfers Notification */}
+        {pendingTransfers.length > 0 && (
+          <motion.div variants={itemVariants} className="mb-6">
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-orange-900">
+                      {pendingTransfers.length} Transfer{pendingTransfers.length > 1 ? 's' : ''} Awaiting Confirmation
+                    </h3>
+                    <p className="text-sm text-orange-700">
+                      Buyers have accepted your property transfers. Please confirm to complete.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex space-x-2">
+                  {pendingTransfers.slice(0, 2).map((transfer) => (
+                    <Link 
+                      key={transfer.transferKey}
+                      to={`/transfer/${transfer.transferKey}`}
+                      className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Confirm #{transfer.propertyId}
+                    </Link>
+                  ))}
+                  {pendingTransfers.length > 2 && (
+                    <span className="text-orange-600 text-sm font-medium px-2 py-1">
+                      +{pendingTransfers.length - 2} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Clean Search and Filter */}
+        <motion.div variants={itemVariants} className="mb-8">
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search properties by name, token ID, or area..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex space-x-3">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+                >
+                  <option value="all">All Properties</option>
+                  <option value="verified">Verified Only</option>
+                  <option value="pending">Pending Only</option>
+                </select>
+                <div className="text-sm text-gray-500 flex items-center px-3">
+                  {filteredLands.length} of {lands.length} properties
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Beautiful Property Cards */}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="glass-card animate-pulse">
-                <div className="h-48 bg-white/10 rounded-lg mb-4"></div>
-                <div className="h-4 bg-white/10 rounded mb-2"></div>
-                <div className="h-4 bg-white/10 rounded w-2/3"></div>
+              <div key={i} className="bg-white rounded-xl shadow-lg p-6 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded mb-4"></div>
+                <div className="h-3 bg-gray-200 rounded mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded w-2/3"></div>
               </div>
             ))}
           </div>
         ) : filteredLands.length > 0 ? (
-          <motion.div 
-            variants={containerVariants}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-          >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredLands.map((land) => (
-              <motion.div
+              <div
                 key={land._id}
-                variants={itemVariants}
-                whileHover={{ y: -5, scale: 1.02 }}
-                className="glass-card group cursor-pointer"
+                className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-100"
               >
-                {/* Property Image/Placeholder */}
-                <div className="h-48 bg-gradient-to-br from-blockchain-blue/20 to-blockchain-green/20 rounded-lg mb-4 flex items-center justify-center relative overflow-hidden">
-                  <Home className="w-16 h-16 text-white/50" />
-                  
-                  {/* Status Badge */}
-                  <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-medium border flex items-center space-x-1 ${getStatusColor(land.status)}`}>
-                    {getStatusIcon(land.status)}
-                    <span className="capitalize">{land.status}</span>
-                  </div>
-                </div>
-
-                {/* Property Info */}
-                <div className="space-y-3">
+                {/* Card Header with Gradient */}
+                <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-6 text-white">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold group-hover:text-blockchain-blue transition-colors">
-                      Property #{land.tokenId}
-                    </h3>
-                    <span className="text-sm text-gray-400 font-mono">
-                      #{land.tokenId}
+                    <div className="flex items-center space-x-3">
+                      <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                        <Home className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold">Property #{land.tokenId}</h3>
+                        <p className="text-blue-100 text-sm">Token ID: {land.tokenId}</p>
+                      </div>
+                    </div>
+                    
+                    {/* Status Badge */}
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      land.status === 'verified' 
+                        ? 'bg-green-100 text-green-800' 
+                        : land.status === 'pending'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {land.status.toUpperCase()}
                     </span>
                   </div>
+                </div>
 
-                  <div className="space-y-2 text-sm text-gray-400">
-                    <div className="flex items-center space-x-2">
-                      <Home size={16} />
-                      <span>{land.area} sq ft</span>
+                {/* Card Body */}
+                <div className="p-6">
+                  {/* Property Details */}
+                  <div className="space-y-4 mb-6">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 font-medium">Owner</span>
+                      <span className="text-gray-900 font-semibold">{land.ownerName}</span>
                     </div>
                     
-                    <div className="flex items-center space-x-2">
-                      <MapPin size={16} />
-                      <span>{land.latitude.toFixed(4)}, {land.longitude.toFixed(4)}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 font-medium">Area</span>
+                      <span className="text-gray-900 font-semibold">{land.area.toLocaleString()} sq ft</span>
                     </div>
                     
-                    <div className="flex items-center space-x-2">
-                      <Calendar size={16} />
-                      <span>{new Date(land.createdAt).toLocaleDateString()}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 font-medium">Location</span>
+                      <span className="text-gray-900 font-semibold text-sm">
+                        {land.latitude.toFixed(4)}, {land.longitude.toFixed(4)}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 font-medium">Registered</span>
+                      <span className="text-gray-900 font-semibold">
+                        {new Date(land.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 font-medium">Blockchain</span>
+                      <span className="text-gray-900 font-semibold text-sm">
+                        {land.transactionHash && land.transactionHash !== 'simulated'
+                          ? `TX: ${land.transactionHash.substring(0, 10)}...`
+                          : land.status === 'verified' 
+                          ? 'On-chain ✅'
+                          : 'Pending ⏳'
+                        }
+                      </span>
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-white/10">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{land.ownerName}</p>
-                        <p className="text-xs text-gray-400">{land.ownerPhone}</p>
-                      </div>
-                      
-                      <Link to={`/land/${land.tokenId}`}>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          className="p-2 rounded-lg glass-morphism hover:bg-white/20 transition-colors"
-                        >
-                          <Eye size={18} />
-                        </motion.button>
-                      </Link>
-                    </div>
+                  {/* Action Buttons */}
+                  <div className="flex space-x-3">
+                    <Link to={`/land/${land.tokenId}`} className="flex-1">
+                      <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-semibold transition-colors duration-200 flex items-center justify-center space-x-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        <span>View Details</span>
+                      </button>
+                    </Link>
+                    
+                    {land.status === 'verified' && (
+                      <button
+                        onClick={() => handleTransferProperty(land.tokenId)}
+                        disabled={transferring === land.tokenId}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg font-semibold transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                      >
+                        {transferring === land.tokenId ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            <span>Processing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                            </svg>
+                            <span>Transfer</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
-              </motion.div>
-            ))}
-          </motion.div>
-        ) : (
-          <motion.div
-            variants={itemVariants}
-            className="glass-card text-center py-16"
-          >
-            <div className="max-w-md mx-auto">
-              <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-r from-blockchain-blue/20 to-blockchain-green/20 flex items-center justify-center">
-                <Home className="w-12 h-12 text-white/50" />
+
+                {/* Card Footer */}
+                <div className="bg-gray-50 px-6 py-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Property Value</span>
+                    <span className="text-gray-700 font-semibold">
+                      {land.status === 'verified' ? 'Market Ready' : 'Under Review'}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <h3 className="text-2xl font-semibold mb-4">
-                {searchTerm || statusFilter !== 'all' ? 'No Properties Found' : 'Start Your Property Journey'}
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-lg p-12 text-center">
+            <div className="max-w-md mx-auto">
+              <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-r from-blue-100 to-purple-100 rounded-full flex items-center justify-center">
+                <Home className="w-12 h-12 text-blue-600" />
+              </div>
+              
+              <h3 className="text-2xl font-bold text-gray-900 mb-4">
+                {searchTerm || statusFilter !== 'all' ? 'No Properties Found' : 'Start Your Property Portfolio'}
               </h3>
-              <p className="text-gray-400 mb-8">
+              
+              <p className="text-gray-600 mb-8 text-lg">
                 {searchTerm || statusFilter !== 'all' 
                   ? 'Try adjusting your search criteria or filters to find properties.'
-                  : `Welcome ${user?.name.split(' ')[0]}! Register your first property on the blockchain to get started with secure, transparent property ownership.`
+                  : 'Register your first property on the blockchain to begin building your digital property portfolio.'
                 }
               </p>
               
-              {!searchTerm && statusFilter === 'all' && (
-                <div className="space-y-4">
+              {!searchTerm && statusFilter === 'all' ? (
+                <div className="space-y-6">
                   <Link to="/register">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="btn-primary flex items-center space-x-2 mx-auto"
-                    >
-                      <Plus size={18} />
-                      <span>Register Your First Property</span>
-                    </motion.button>
+                    <button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-4 rounded-lg font-semibold text-lg shadow-lg transition-all duration-200">
+                      Register Your First Property
+                    </button>
                   </Link>
                   
-                  <div className="flex items-center justify-center space-x-6 text-sm text-gray-500">
+                  <div className="flex items-center justify-center space-x-8 text-sm text-gray-500">
                     <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                       <span>Blockchain Secured</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                       <span>Government Verified</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                      <span>Transferable NFTs</span>
                     </div>
                   </div>
                 </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setStatusFilter('all');
+                  }}
+                  className="text-blue-600 hover:text-blue-700 font-semibold"
+                >
+                  Clear all filters
+                </button>
               )}
             </div>
-          </motion.div>
+          </div>
         )}
 
-        {/* Summary Stats */}
+        {/* Beautiful Portfolio Stats */}
         {filteredLands.length > 0 && (
-          <motion.div variants={itemVariants} className="mt-8">
-            <div className="glass-card">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 text-center">
-                <div>
-                  <div className="text-2xl font-bold font-orbitron gradient-text">
-                    {filteredLands.length}
-                  </div>
-                  <div className="text-sm text-gray-400">Total Properties</div>
+          <div className="mt-8 bg-white rounded-xl shadow-lg p-8">
+            <h3 className="text-2xl font-bold text-gray-900 mb-6">Portfolio Overview</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg">
+                <div className="w-12 h-12 mx-auto mb-3 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <Home className="w-6 h-6 text-white" />
                 </div>
-                
-                <div>
-                  <div className="text-2xl font-bold font-orbitron text-green-400">
-                    {filteredLands.filter(land => land.status === 'verified').length}
-                  </div>
-                  <div className="text-sm text-gray-400">Verified</div>
+                <div className="text-3xl font-bold text-blue-600 mb-1">{filteredLands.length}</div>
+                <div className="text-sm text-blue-700 font-medium">Total Properties</div>
+              </div>
+              
+              <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-lg">
+                <div className="w-12 h-12 mx-auto mb-3 bg-green-600 rounded-lg flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
                 </div>
-                
-                <div>
-                  <div className="text-2xl font-bold font-orbitron text-orange-400">
-                    {filteredLands.filter(land => land.status === 'pending').length}
-                  </div>
-                  <div className="text-sm text-gray-400">Pending</div>
+                <div className="text-3xl font-bold text-green-600 mb-1">
+                  {filteredLands.filter(land => land.status === 'verified').length}
                 </div>
-                
-                <div>
-                  <div className="text-2xl font-bold font-orbitron gradient-text">
-                    {filteredLands.reduce((total, land) => total + land.area, 0).toLocaleString()}
-                  </div>
-                  <div className="text-sm text-gray-400">Total Area (sq ft)</div>
+                <div className="text-sm text-green-700 font-medium">Verified</div>
+              </div>
+              
+              <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg">
+                <div className="w-12 h-12 mx-auto mb-3 bg-orange-600 rounded-lg flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
                 </div>
+                <div className="text-3xl font-bold text-orange-600 mb-1">
+                  {filteredLands.filter(land => land.status === 'pending').length}
+                </div>
+                <div className="text-sm text-orange-700 font-medium">Pending</div>
+              </div>
+              
+              <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg">
+                <div className="w-12 h-12 mx-auto mb-3 bg-purple-600 rounded-lg flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                  </svg>
+                </div>
+                <div className="text-3xl font-bold text-purple-600 mb-1">
+                  {filteredLands.reduce((total, land) => total + land.area, 0).toLocaleString()}
+                </div>
+                <div className="text-sm text-purple-700 font-medium">Total Area (sq ft)</div>
               </div>
             </div>
-          </motion.div>
+          </div>
         )}
       </div>
+      
+      {/* Transfer Dialog */}
+      <TransferDialog
+        isOpen={transferDialogOpen}
+        onClose={() => {
+          setTransferDialogOpen(false);
+          setSelectedPropertyId(null);
+        }}
+        onTransfer={handleTransferSubmit}
+        propertyId={selectedPropertyId || 0}
+        loading={transferring !== null}
+      />
     </motion.div>
   );
 };

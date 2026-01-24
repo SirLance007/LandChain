@@ -16,6 +16,7 @@ export interface Land {
   documents: string[];
   status: 'pending' | 'verified' | 'rejected';
   transactionHash?: string;
+  blockNumber?: number;
   createdAt: string;
 }
 

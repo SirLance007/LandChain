@@ -27,6 +27,13 @@ contract LandNFT is ERC721, Ownable {
         uint256 timestamp
     );
     
+    event LandTransferred(
+        uint256 indexed tokenId,
+        address indexed from,
+        address indexed to,
+        uint256 timestamp
+    );
+    
     constructor() ERC721("LandChain", "LAND") Ownable(msg.sender) {}
     
     function mintLand(
@@ -53,6 +60,19 @@ contract LandNFT is ERC721, Ownable {
         emit LandRegistered(tokenId, to, ipfsHash, block.timestamp);
         
         return tokenId;
+    }
+    
+    function transferLand(
+        uint256 tokenId,
+        address to
+    ) public {
+        require(ownerOf(tokenId) == msg.sender, "Not the owner");
+        require(to != address(0), "Invalid recipient");
+        
+        address from = ownerOf(tokenId);
+        _transfer(from, to, tokenId);
+        
+        emit LandTransferred(tokenId, from, to, block.timestamp);
     }
     
     function getLandData(uint256 tokenId) 

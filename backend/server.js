@@ -57,6 +57,7 @@ app.use('/api/auth', require('./routes/authRoute'));
 app.use('/api/upload', require('./routes/uploadRoute'));
 app.use('/api/land', require('./routes/landRoute'));
 app.use('/api/documents', require('./routes/documentRoute'));
+app.use('/api/transfer', require('./routes/transferRoute'));
 
 // Health check
 app.get('/health', (req, res) => {

@@ -4,10 +4,12 @@ const { ethers } = require('ethers');
 // Contract ABI (Application Binary Interface)
 const LAND_NFT_ABI = [
   "function mintLand(address to, string memory ipfsHash, int256 lat, int256 lon, uint256 area) public returns (uint256)",
+  "function transferLand(uint256 tokenId, address to) public",
   "function getLandData(uint256 tokenId) public view returns (tuple(string ipfsHash, int256 latitude, int256 longitude, uint256 area, uint256 registeredAt, address registeredBy))",
   "function getTotalLands() public view returns (uint256)",
   "function ownerOf(uint256 tokenId) public view returns (address)",
-  "event LandRegistered(uint256 indexed tokenId, address indexed owner, string ipfsHash, uint256 timestamp)"
+  "event LandRegistered(uint256 indexed tokenId, address indexed owner, string ipfsHash, uint256 timestamp)",
+  "event LandTransferred(uint256 indexed tokenId, address indexed from, address indexed to, uint256 timestamp)"
 ];
 
 class BlockchainService {
@@ -55,6 +57,46 @@ class BlockchainService {
       console.error('❌ Blockchain initialization failed:', error.message);
       this.isInitialized = false;
       return false;
+    }
+  }
+
+  async transferLandNFT(tokenId, newOwnerAddress) {
+    if (!this.isInitialized) {
+      throw new Error('Blockchain service not initialized');
+    }
+
+    try {
+      console.log('🔄 Transferring NFT on blockchain...', {
+        tokenId,
+        newOwner: newOwnerAddress
+      });
+
+      // Call smart contract transfer function
+      const tx = await this.contract.transferLand(tokenId, newOwnerAddress);
+
+      console.log('📝 Transfer transaction submitted:', tx.hash);
+
+      // Wait for confirmation
+      const receipt = await tx.wait();
+      console.log('✅ Transfer transaction confirmed:', receipt.hash);
+
+      // Extract transfer event
+      const transferEvent = receipt.logs.find(
+        log => log.fragment && log.fragment.name === 'LandTransferred'
+      );
+
+      return {
+        success: true,
+        transactionHash: receipt.hash,
+        blockNumber: receipt.blockNumber,
+        gasUsed: receipt.gasUsed.toString(),
+        from: transferEvent ? transferEvent.args[1] : 'unknown',
+        to: transferEvent ? transferEvent.args[2] : newOwnerAddress
+      };
+
+    } catch (error) {
+      console.error('❌ NFT transfer failed:', error);
+      throw new Error(`Blockchain transfer failed: ${error.message}`);
     }
   }
 

@@ -1,0 +1,406 @@
+// Property Transfer Controller
+const crypto = require('crypto');
+const PropertyTransfer = require('../models/PropertyTransfer');
+const Land = require('../models/Land');
+const User = require('../models/User');
+const { blockchainService } = require('../utils/blockchain');
+
+// Generate transfer key for property
+const initiateTransfer = async (req, res) => {
+  try {
+    console.log('🔄 Transfer initiation request:', {
+      user: req.user ? req.user.email : 'No user',
+      body: req.body
+    });
+
+    const { propertyId, buyerEmail, price } = req.body;
+    
+    if (!req.user) {
+      console.log('❌ No user in request');
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+    
+    const sellerId = req.user._id.toString(); // Convert ObjectId to string
+    
+    // Verify seller owns the property
+    const property = await Land.findOne({ tokenId: propertyId, userId: sellerId });
+    console.log('🔍 Property search result:', {
+      tokenId: propertyId,
+      userId: sellerId,
+      found: !!property
+    });
+    
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        error: 'Property not found or you are not the owner'
+      });
+    }
+    
+    // Check if property is already verified
+    if (property.status !== 'verified') {
+      return res.status(400).json({
+        success: false,
+        error: 'Only verified properties can be transferred'
+      });
+    }
+    
+    // Generate unique transfer key
+    const transferKey = crypto.randomBytes(32).toString('hex');
+    
+    // Create transfer record
+    const transfer = new PropertyTransfer({
+      transferKey,
+      propertyId,
+      sellerId: sellerId, // Already converted to string
+      sellerEmail: req.user.email,
+      buyerEmail,
+      price,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+    });
+    
+    await transfer.save();
+    
+    console.log(`🔑 Transfer key generated for Property #${propertyId}: ${transferKey}`);
+    
+    res.json({
+      success: true,
+      transferKey,
+      transferUrl: `${process.env.FRONTEND_URL}/transfer/${transferKey}`,
+      expiresAt: transfer.expiresAt,
+      message: 'Transfer key generated successfully'
+    });
+    
+  } catch (error) {
+    console.error('Transfer initiation error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Get transfer details by key
+const getTransferDetails = async (req, res) => {
+  try {
+    const { transferKey } = req.params;
+    console.log('🔍 Getting transfer details for key:', transferKey);
+    
+    const transfer = await PropertyTransfer.findOne({ transferKey });
+    
+    if (!transfer) {
+      console.log('❌ Transfer not found for key:', transferKey);
+      return res.status(404).json({
+        success: false,
+        error: 'Invalid or expired transfer key'
+      });
+    }
+    
+    // Check if expired
+    if (transfer.expiresAt < new Date()) {
+      console.log('❌ Transfer expired:', transfer.expiresAt);
+      return res.status(400).json({
+        success: false,
+        error: 'Transfer key has expired'
+      });
+    }
+    
+    // Get property details separately
+    console.log('🔍 Looking for property with tokenId:', transfer.propertyId, 'type:', typeof transfer.propertyId);
+    const property = await Land.findOne({ tokenId: transfer.propertyId });
+    if (!property) {
+      console.log('❌ Property not found for tokenId:', transfer.propertyId);
+      return res.status(404).json({
+        success: false,
+        error: 'Property not found'
+      });
+    }
+    console.log('✅ Property found:', property.ownerName);
+    
+    // Get seller details
+    const User = require('../models/User');
+    const mongoose = require('mongoose');
+    const seller = await User.findById(new mongoose.Types.ObjectId(transfer.sellerId));
+    if (!seller) {
+      console.log('❌ Seller not found for sellerId:', transfer.sellerId);
+      return res.status(404).json({
+        success: false,
+        error: 'Seller not found'
+      });
+    }
+    
+    console.log('✅ Transfer details found successfully');
+    
+    res.json({
+      success: true,
+      transfer: {
+        key: transfer.transferKey,
+        status: transfer.status,
+        price: transfer.price,
+        expiresAt: transfer.expiresAt
+      },
+      buyerEmail: transfer.buyerEmail, // Add buyer email for verification
+      property: {
+        tokenId: property.tokenId,
+        ownerName: property.ownerName,
+        area: property.area,
+        latitude: property.latitude,
+        longitude: property.longitude,
+        documents: property.documents,
+        transactionHash: property.transactionHash,
+        blockNumber: property.blockNumber
+      },
+      seller: {
+        name: seller.name,
+        email: seller.email
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get transfer details error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Buyer accepts transfer
+const acceptTransfer = async (req, res) => {
+  try {
+    const { transferKey, buyerSignature, buyerWalletAddress } = req.body;
+    const buyerId = req.user._id.toString(); // Convert to string
+    
+    const transfer = await PropertyTransfer.findOne({ transferKey });
+    
+    if (!transfer || transfer.expiresAt < new Date()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired transfer key'
+      });
+    }
+    
+    // Update transfer with buyer info
+    transfer.buyerId = buyerId;
+    transfer.buyerEmail = req.user.email;
+    transfer.buyerSignature = buyerSignature;
+    transfer.buyerSignedAt = new Date();
+    transfer.buyerWalletAddress = buyerWalletAddress;
+    transfer.status = 'buyer_accepted';
+    
+    await transfer.save();
+    
+    console.log(`✅ Buyer accepted transfer: ${transferKey}`);
+    
+    res.json({
+      success: true,
+      message: 'Transfer accepted by buyer',
+      nextStep: 'Waiting for seller confirmation'
+    });
+    
+  } catch (error) {
+    console.error('Accept transfer error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Seller confirms transfer
+const confirmTransfer = async (req, res) => {
+  try {
+    const { transferKey, sellerSignature } = req.body;
+    const sellerId = req.user._id.toString(); // Convert to string
+    
+    const transfer = await PropertyTransfer.findOne({ 
+      transferKey, 
+      sellerId,
+      status: 'buyer_accepted'
+    });
+    
+    if (!transfer) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid transfer or buyer has not accepted yet'
+      });
+    }
+    
+    // Update transfer with seller confirmation
+    transfer.sellerSignature = sellerSignature;
+    transfer.sellerSignedAt = new Date();
+    transfer.status = 'both_signed';
+    
+    await transfer.save();
+    
+    // Execute actual ownership transfer
+    await executeOwnershipTransfer(transfer);
+    
+    console.log(`✅ Ownership transferred for: ${transferKey}`);
+    
+    res.json({
+      success: true,
+      message: 'Transfer completed successfully! Property ownership has been transferred.',
+      nextStep: 'Property ownership updated'
+    });
+    
+  } catch (error) {
+    console.error('Confirm transfer error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Execute actual ownership transfer
+const executeOwnershipTransfer = async (transfer) => {
+  try {
+    console.log(`🔄 Executing ownership transfer for Property #${transfer.propertyId}`);
+    
+    // Get buyer details
+    const User = require('../models/User');
+    const mongoose = require('mongoose');
+    const buyer = await User.findById(new mongoose.Types.ObjectId(transfer.buyerId));
+    
+    if (!buyer) {
+      throw new Error('Buyer not found');
+    }
+    
+    // Update property ownership in Land model
+    const property = await Land.findOne({ tokenId: transfer.propertyId });
+    if (!property) {
+      throw new Error('Property not found');
+    }
+    
+    console.log(`📋 Transferring ownership:`);
+    console.log(`   From: ${property.ownerName} (${property.userEmail})`);
+    console.log(`   To: ${buyer.name} (${buyer.email})`);
+    
+    // Execute blockchain transfer if available
+    let blockchainResult = null;
+    if (blockchainService.isConnected()) {
+      try {
+        console.log('🔗 Executing blockchain transfer...');
+        
+        // Get buyer's wallet address (for now using a placeholder)
+        const buyerWalletAddress = buyer.walletAddress || '0x1d524D361EF86057dF3583c87D1815032fdb8dba';
+        
+        // Execute actual blockchain transfer
+        blockchainResult = await blockchainService.transferLandNFT(
+          transfer.propertyId,
+          buyerWalletAddress
+        );
+        
+        console.log('✅ Blockchain transfer successful:', blockchainResult);
+        
+      } catch (blockchainError) {
+        console.error('❌ Blockchain transfer failed:', blockchainError.message);
+        // Continue with database update even if blockchain fails
+        console.log('📝 Continuing with database update...');
+      }
+    } else {
+      console.log('⚠️ Blockchain service not available, updating database only');
+    }
+    
+    // Transfer ownership - Update all owner fields
+    property.userId = transfer.buyerId;
+    property.userEmail = buyer.email;
+    property.userGoogleId = buyer.googleId;
+    property.owner = buyer.walletAddress || buyer.email;
+    property.ownerName = buyer.name;
+    property.ownerPhone = ''; // Buyer can update later
+    
+    // Add blockchain transaction info if available
+    if (blockchainResult && blockchainResult.transactionHash) {
+      property.transactionHash = blockchainResult.transactionHash;
+      property.blockNumber = blockchainResult.blockNumber;
+    }
+    
+    await property.save();
+    
+    // Update transfer status to completed
+    transfer.status = 'completed';
+    transfer.completedAt = new Date();
+    
+    // Add blockchain info to transfer record
+    if (blockchainResult) {
+      transfer.transactionHash = blockchainResult.transactionHash || 'simulated';
+      transfer.blockNumber = blockchainResult.blockNumber || 0;
+    }
+    
+    await transfer.save();
+    
+    console.log(`✅ Property #${transfer.propertyId} ownership successfully transferred!`);
+    console.log(`   New Owner: ${buyer.name} (${buyer.email})`);
+    
+    if (blockchainResult) {
+      console.log(`🔗 Blockchain Result:`, blockchainResult);
+    }
+    
+  } catch (error) {
+    console.error('❌ Ownership transfer failed:', error);
+    throw error;
+  }
+};
+
+// Get pending transfers for seller
+const getPendingTransfers = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    const sellerId = req.user._id.toString();
+    
+    // Find transfers where seller needs to confirm
+    const transfers = await PropertyTransfer.find({
+      sellerId: sellerId,
+      status: 'buyer_accepted'
+    }).sort({ createdAt: -1 });
+
+    // Get property details for each transfer
+    const transfersWithDetails = await Promise.all(
+      transfers.map(async (transfer) => {
+        const property = await Land.findOne({ tokenId: transfer.propertyId });
+        return {
+          transferKey: transfer.transferKey,
+          propertyId: transfer.propertyId,
+          propertyName: `Property #${transfer.propertyId}`,
+          buyerEmail: transfer.buyerEmail,
+          price: transfer.price,
+          createdAt: transfer.createdAt,
+          expiresAt: transfer.expiresAt,
+          area: property?.area,
+          ownerName: property?.ownerName
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      transfers: transfersWithDetails
+    });
+
+  } catch (error) {
+    console.error('Get pending transfers error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+module.exports = {
+  initiateTransfer,
+  getTransferDetails,
+  acceptTransfer,
+  confirmTransfer,
+  getPendingTransfers
+};
