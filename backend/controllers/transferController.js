@@ -381,9 +381,13 @@ const executeOwnershipTransfer = async (transfer) => {
         console.log(`   Token ID: ${transfer.propertyId}`);
         console.log(`   To: ${transfer.buyerWalletAddress}`);
         
-        // Execute blockchain transfer using ADMIN FORCE TRANSFER
-        blockchainResult = await blockchainService.adminForceTransfer(
+        // Execute DIRECT NFT TRANSFER - Simple & Fast! 🚀
+        console.log('🚀 Using DIRECT NFT TRANSFER - Simple & Fast!');
+        console.log('💡 Both wallets known, transferring directly...');
+        
+        blockchainResult = await blockchainService.directTransferNFT(
           transfer.propertyId,
+          transfer.sellerWalletAddress || '0x1d524D361EF86057dF3583c87D1815032fdb8dba',
           transfer.buyerWalletAddress
         );
         
@@ -392,19 +396,20 @@ const executeOwnershipTransfer = async (transfer) => {
           transactionHash: blockchainResult.transactionHash,
           transferHash: blockchainResult.transferHash,
           uniqueTransfer: blockchainResult.uniqueTransfer,
-          forceTransfer: blockchainResult.forceTransfer,
+          directTransfer: blockchainResult.directTransfer,
           from: blockchainResult.from,
           to: blockchainResult.to,
           verifiedNewOwner: blockchainResult.verifiedNewOwner
         });
         
-        // Check if it was a real blockchain transfer or just database update
+        // Check if it was a real blockchain transfer with unique hash
         if (blockchainResult.success && 
             blockchainResult.transactionHash !== 'admin-not-owner' && 
             blockchainResult.transactionHash !== 'already-owned' &&
             blockchainResult.uniqueTransfer) {
           transferSuccess = true;
-          console.log('🎉🎉🎉 REAL BLOCKCHAIN NFT TRANSFER COMPLETED! 🎉🎉🎉');
+          console.log('🎉🎉🎉 DIRECT NFT TRANSFER COMPLETED! 🎉🎉🎉');
+          console.log('🚀 Simple & Fast - No signatures needed!');
           console.log('🔗 Unique transfer hash:', blockchainResult.transferHash);
           console.log('📋 Transaction details:');
           console.log('   From:', blockchainResult.from);
@@ -416,11 +421,6 @@ const executeOwnershipTransfer = async (transfer) => {
           transferSuccess = false;
           console.log('❌ DATABASE-ONLY TRANSFER (blockchain transfer failed)');
           console.log('💡 Reason:', blockchainResult.message || 'Unknown error');
-          console.log('📋 Failed transfer details:', {
-            success: blockchainResult.success,
-            transactionHash: blockchainResult.transactionHash,
-            uniqueTransfer: blockchainResult.uniqueTransfer
-          });
         }
         
       } catch (blockchainError) {
@@ -486,7 +486,8 @@ const executeOwnershipTransfer = async (transfer) => {
         blockNumber: blockchainResult.blockNumber,
         transferHash: blockchainResult.transferHash, // Unique contract-generated hash
         price: transfer.price,
-        blockchainTransfer: true
+        blockchainTransfer: true,
+        directTransfer: blockchainResult.directTransfer || false
       });
       
     } else {

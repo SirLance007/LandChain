@@ -355,6 +355,96 @@ class BlockchainService {
     }
   }
 
+  async directTransferNFT(tokenId, fromAddress, toAddress) {
+    if (!this.isInitialized) {
+      throw new Error('Blockchain service not initialized');
+    }
+
+    try {
+      console.log('🚀 DIRECT NFT TRANSFER - Simple & Fast!');
+      console.log('🔄 Direct transferring NFT...', {
+        tokenId,
+        from: fromAddress,
+        to: toAddress
+      });
+
+      // Check current owner
+      const currentOwner = await this.contract.ownerOf(tokenId);
+      console.log('👤 Current NFT owner:', currentOwner);
+      console.log('🎯 Transferring to:', toAddress);
+      
+      if (currentOwner.toLowerCase() === toAddress.toLowerCase()) {
+        console.log('⚠️ NFT already owned by target address');
+        return {
+          success: true,
+          transactionHash: 'already-owned',
+          message: 'NFT already owned by target address'
+        };
+      }
+
+      // Use admin transfer for direct transfer (simplest method)
+      console.log('💪 Using admin direct transfer...');
+      
+      const gasEstimate = await this.contract.adminTransfer.estimateGas(tokenId, toAddress);
+      console.log('⛽ Estimated gas:', gasEstimate.toString());
+
+      // Execute direct transfer
+      const tx = await this.contract.adminTransfer(tokenId, toAddress, {
+        gasLimit: gasEstimate * 120n / 100n
+      });
+
+      console.log('📝 DIRECT TRANSFER transaction submitted:', tx.hash);
+      console.log('⏳ Waiting for confirmation...');
+
+      const receipt = await tx.wait();
+      console.log('✅ DIRECT TRANSFER confirmed:', receipt.hash);
+      console.log('📦 Block number:', receipt.blockNumber);
+      console.log('⛽ Gas used:', receipt.gasUsed.toString());
+
+      // Verify transfer
+      const newOwner = await this.contract.ownerOf(tokenId);
+      console.log('🔍 Verified new owner:', newOwner);
+
+      // Extract transfer event
+      let transferEvent = null;
+      let transferHash = null;
+      
+      for (const log of receipt.logs) {
+        try {
+          const parsedLog = this.contract.interface.parseLog(log);
+          if (parsedLog && parsedLog.name === 'LandTransferred') {
+            transferEvent = parsedLog;
+            transferHash = parsedLog.args[3];
+            break;
+          }
+        } catch (e) {
+          // Skip unparseable logs
+        }
+      }
+
+      const result = {
+        success: true,
+        transactionHash: receipt.hash,
+        blockNumber: receipt.blockNumber,
+        gasUsed: receipt.gasUsed.toString(),
+        from: transferEvent ? transferEvent.args[1] : currentOwner,
+        to: transferEvent ? transferEvent.args[2] : toAddress,
+        verifiedNewOwner: newOwner,
+        transferHash: transferHash,
+        uniqueTransfer: true,
+        directTransfer: true
+      };
+
+      console.log('🎉 DIRECT TRANSFER completed successfully!');
+      console.log('🚀 Simple and fast - no signatures needed!');
+      return result;
+
+    } catch (error) {
+      console.error('❌ Direct transfer failed:', error);
+      throw new Error(`Direct transfer failed: ${error.message}`);
+    }
+  }
+
   async executeSignatureTransfer(tokenId, fromAddress, toAddress, signature, nonce, deadline) {
     if (!this.isInitialized) {
       throw new Error('Blockchain service not initialized');
