@@ -5,9 +5,13 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
-contract LandNFT is ERC721, Ownable {
+contract LandNFT is ERC721, Ownable, AccessControl {
     uint256 private _tokenIdCounter;
+    
+    // Role for approved registrars who can mint land NFTs
+    bytes32 public constant REGISTRAR_ROLE = keccak256("REGISTRAR_ROLE");
     
     struct LandData {
         string ipfsHash;
@@ -16,55 +20,461 @@ contract LandNFT is ERC721, Ownable {
         uint256 area;
         uint256 registeredAt;
         address registeredBy;
+        bytes32 landHash; // Hash of coordinates + IPFS for duplicate prevention
+    }
+    
+    struct TransferRecord {
+        address from;
+        address to;
+        uint256 timestamp;
+        bytes32 transferHash; // Unique hash for this transfer
     }
     
     mapping(uint256 => LandData) public lands;
+    mapping(bytes32 => bool) public landExists; // Prevent duplicate land registration
+    mapping(uint256 => TransferRecord[]) public transferHistory; // Track all transfers per token
+    mapping(bytes32 => uint256) public transferHashToTokenId; // Map transfer hash to token ID
+    
+    // Signature-based transfer system
+    mapping(bytes32 => bool) public usedSignatures; // Prevent signature replay
+    mapping(address => uint256) public nonces; // User nonces for signature uniqueness
+    
+    // Transfer authorization structure
+    struct TransferAuthorization {
+        uint256 tokenId;
+        address from;
+        address to;
+        uint256 nonce;
+        uint256 deadline;
+    }
+    
+    event SignatureTransferExecuted(
+        uint256 indexed tokenId,
+        address indexed from,
+        address indexed to,
+        bytes32 transferHash,
+        bytes32 signatureHash,
+        uint256 timestamp
+    );
     
     event LandRegistered(
         uint256 indexed tokenId,
         address indexed owner,
         string ipfsHash,
+        bytes32 indexed landHash,
         uint256 timestamp
     );
     
-    constructor() ERC721("LandChain", "LAND") Ownable(msg.sender) {}
+    event LandTransferred(
+        uint256 indexed tokenId,
+        address indexed from,
+        address indexed to,
+        bytes32 transferHash,
+        uint256 timestamp
+    );
     
+    event RegistrarAdded(address indexed registrar, address indexed addedBy);
+    event RegistrarRemoved(address indexed registrar, address indexed removedBy);
+    
+    constructor() ERC721("LandChain", "LAND") Ownable(msg.sender) {
+        // Grant the contract deployer the default admin role
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        // Grant the contract deployer the registrar role
+        _grantRole(REGISTRAR_ROLE, msg.sender);
+    }
+    
+    /**
+     * @dev Modifier to restrict minting to approved registrars only
+     */
+    modifier onlyRegistrar() {
+        require(
+            hasRole(REGISTRAR_ROLE, msg.sender) || owner() == msg.sender,
+            "LandNFT: caller is not a registrar or owner"
+        );
+        _;
+    }
+    
+    /**
+     * @dev Add a new registrar who can mint land NFTs
+     * @param registrar Address to grant registrar role
+     */
+    function addRegistrar(address registrar) public onlyOwner {
+        require(registrar != address(0), "LandNFT: invalid registrar address");
+        _grantRole(REGISTRAR_ROLE, registrar);
+        emit RegistrarAdded(registrar, msg.sender);
+    }
+    
+    /**
+     * @dev Remove a registrar
+     * @param registrar Address to revoke registrar role from
+     */
+    function removeRegistrar(address registrar) public onlyOwner {
+        _revokeRole(REGISTRAR_ROLE, registrar);
+        emit RegistrarRemoved(registrar, msg.sender);
+    }
+    
+    /**
+     * @dev Check if an address is a registrar
+     * @param account Address to check
+     */
+    function isRegistrar(address account) public view returns (bool) {
+        return hasRole(REGISTRAR_ROLE, account);
+    }
+    
+    /**
+     * @dev Generate unique hash for land based on coordinates and IPFS hash
+     * @param ipfsHash IPFS hash of land documents
+     * @param lat Latitude coordinate
+     * @param lon Longitude coordinate
+     */
+    function _generateLandHash(
+        string memory ipfsHash,
+        int256 lat,
+        int256 lon
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(ipfsHash, lat, lon));
+    }
+    
+    /**
+     * @dev Generate unique hash for transfer
+     * @param tokenId Token ID being transferred
+     * @param from Address transferring from
+     * @param to Address transferring to
+     * @param timestamp Block timestamp
+     */
+    function _generateTransferHash(
+        uint256 tokenId,
+        address from,
+        address to,
+        uint256 timestamp
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(tokenId, from, to, timestamp));
+    }
+    
+    /**
+     * @dev Mint a new land NFT (restricted to registrars)
+     * @param to Address to mint the NFT to
+     * @param ipfsHash IPFS hash of land documents
+     * @param lat Latitude coordinate (multiplied by 1000000 for precision)
+     * @param lon Longitude coordinate (multiplied by 1000000 for precision)
+     * @param area Land area in square meters
+     */
     function mintLand(
         address to,
         string memory ipfsHash,
         int256 lat,
         int256 lon,
         uint256 area
-    ) public returns (uint256) {
+    ) public onlyRegistrar returns (uint256) {
+        require(to != address(0), "LandNFT: cannot mint to zero address");
+        require(bytes(ipfsHash).length > 0, "LandNFT: IPFS hash cannot be empty");
+        require(area > 0, "LandNFT: area must be greater than zero");
+        
+        // Generate unique hash for this land
+        bytes32 landHash = _generateLandHash(ipfsHash, lat, lon);
+        
+        // Check for duplicate land registration
+        require(!landExists[landHash], "LandNFT: land already registered with these coordinates and documents");
+        
         uint256 tokenId = _tokenIdCounter;
         _tokenIdCounter++;
         
+        // Mark this land as existing
+        landExists[landHash] = true;
+        
+        // Mint the NFT
         _safeMint(to, tokenId);
         
+        // Store land data
         lands[tokenId] = LandData({
             ipfsHash: ipfsHash,
             latitude: lat,
             longitude: lon,
             area: area,
             registeredAt: block.timestamp,
-            registeredBy: msg.sender
+            registeredBy: msg.sender,
+            landHash: landHash
         });
         
-        emit LandRegistered(tokenId, to, ipfsHash, block.timestamp);
+        // Record initial "transfer" (minting) in history
+        bytes32 transferHash = _generateTransferHash(tokenId, address(0), to, block.timestamp);
+        transferHistory[tokenId].push(TransferRecord({
+            from: address(0),
+            to: to,
+            timestamp: block.timestamp,
+            transferHash: transferHash
+        }));
+        transferHashToTokenId[transferHash] = tokenId;
+        
+        emit LandRegistered(tokenId, to, ipfsHash, landHash, block.timestamp);
         
         return tokenId;
     }
     
+    /**
+     * @dev Override _update to emit custom event and track transfers
+     */
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override
+        returns (address)
+    {
+        address from = _ownerOf(tokenId);
+        address previousOwner = super._update(to, tokenId, auth);
+        
+        // Only track actual transfers (not minting/burning)
+        if (from != address(0) && to != address(0)) {
+            // Generate unique transfer hash
+            bytes32 transferHash = _generateTransferHash(tokenId, from, to, block.timestamp);
+            
+            // Record transfer in history
+            transferHistory[tokenId].push(TransferRecord({
+                from: from,
+                to: to,
+                timestamp: block.timestamp,
+                transferHash: transferHash
+            }));
+            transferHashToTokenId[transferHash] = tokenId;
+            
+            // Emit custom transfer event with unique hash
+            emit LandTransferred(tokenId, from, to, transferHash, block.timestamp);
+        }
+        
+        return previousOwner;
+    }
+    
+    /**
+     * @dev Get land data for a token
+     * @param tokenId Token ID to query
+     */
     function getLandData(uint256 tokenId) 
         public 
         view 
         returns (LandData memory) 
     {
-        require(ownerOf(tokenId) != address(0), "Land not registered");
+        require(_ownerOf(tokenId) != address(0), "LandNFT: land not registered");
         return lands[tokenId];
     }
     
+    /**
+     * @dev Get transfer history for a token
+     * @param tokenId Token ID to query
+     */
+    function getTransferHistory(uint256 tokenId) 
+        public 
+        view 
+        returns (TransferRecord[] memory) 
+    {
+        require(_ownerOf(tokenId) != address(0), "LandNFT: land not registered");
+        return transferHistory[tokenId];
+    }
+    
+    /**
+     * @dev Get token ID from transfer hash
+     * @param transferHash Unique transfer hash
+     */
+    function getTokenIdFromTransferHash(bytes32 transferHash) 
+        public 
+        view 
+        returns (uint256) 
+    {
+        return transferHashToTokenId[transferHash];
+    }
+    
+    /**
+     * @dev Check if land exists with given coordinates and IPFS hash
+     * @param ipfsHash IPFS hash of land documents
+     * @param lat Latitude coordinate
+     * @param lon Longitude coordinate
+     */
+    function checkLandExists(
+        string memory ipfsHash,
+        int256 lat,
+        int256 lon
+    ) public view returns (bool) {
+        bytes32 landHash = _generateLandHash(ipfsHash, lat, lon);
+        return landExists[landHash];
+    }
+    
+    /**
+     * @dev Get total number of lands minted
+     */
     function getTotalLands() public view returns (uint256) {
         return _tokenIdCounter;
+    }
+    
+    /**
+     * @dev Admin force transfer function - allows admin to transfer any NFT
+     * This is needed for property transfers when users don't have technical knowledge
+     * @param tokenId Token ID to transfer
+     * @param to Address to transfer to
+     */
+    function adminTransfer(uint256 tokenId, address to) public onlyOwner {
+        require(to != address(0), "LandNFT: cannot transfer to zero address");
+        require(_ownerOf(tokenId) != address(0), "LandNFT: token does not exist");
+        
+        address from = _ownerOf(tokenId);
+        
+        // Force transfer using internal _update function
+        _update(to, tokenId, address(0));
+        
+        // The _update override will automatically handle the transfer event and history
+    }
+    
+    /**
+     * @dev Batch admin transfer function - transfer multiple NFTs at once
+     * @param tokenIds Array of token IDs to transfer
+     * @param to Address to transfer all tokens to
+     */
+    function adminBatchTransfer(uint256[] calldata tokenIds, address to) public onlyOwner {
+        require(to != address(0), "LandNFT: cannot transfer to zero address");
+        
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            if (_ownerOf(tokenIds[i]) != address(0)) {
+                adminTransfer(tokenIds[i], to);
+            }
+        }
+    }
+    
+    /**
+     * @dev Override supportsInterface to include AccessControl
+     */
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721, AccessControl)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
+    }
+    
+    /**
+     * @dev Get total number of transfers for a token
+     * @param tokenId Token ID to query
+     */
+    function getTransferCount(uint256 tokenId) public view returns (uint256) {
+        require(_ownerOf(tokenId) != address(0), "LandNFT: land not registered");
+        return transferHistory[tokenId].length;
+    }
+    
+    /**
+     * @dev Generate hash for transfer authorization
+     * @param auth Transfer authorization struct
+     */
+    function getTransferAuthHash(TransferAuthorization memory auth) public view returns (bytes32) {
+        return keccak256(abi.encodePacked(
+            "\x19\x01", // EIP-191 prefix
+            block.chainid,
+            address(this),
+            auth.tokenId,
+            auth.from,
+            auth.to,
+            auth.nonce,
+            auth.deadline
+        ));
+    }
+    
+    /**
+     * @dev Execute transfer with signature (receiver submits)
+     * @param auth Transfer authorization details
+     * @param signature Signature from the token owner (sender)
+     */
+    function executeSignatureTransfer(
+        TransferAuthorization memory auth,
+        bytes memory signature
+    ) public {
+        require(block.timestamp <= auth.deadline, "LandNFT: signature expired");
+        require(auth.to != address(0), "LandNFT: invalid recipient");
+        require(_ownerOf(auth.tokenId) == auth.from, "LandNFT: from is not owner");
+        require(nonces[auth.from] == auth.nonce, "LandNFT: invalid nonce");
+        
+        // Generate hash for signature verification
+        bytes32 authHash = getTransferAuthHash(auth);
+        require(!usedSignatures[authHash], "LandNFT: signature already used");
+        
+        // Verify signature
+        address signer = recoverSigner(authHash, signature);
+        require(signer == auth.from, "LandNFT: invalid signature");
+        
+        // Mark signature as used and increment nonce
+        usedSignatures[authHash] = true;
+        nonces[auth.from]++;
+        
+        // Execute the transfer
+        _update(auth.to, auth.tokenId, address(0));
+        
+        // Generate unique transfer hash for this signature-based transfer
+        bytes32 transferHash = _generateTransferHash(auth.tokenId, auth.from, auth.to, block.timestamp);
+        
+        // Record transfer in history
+        transferHistory[auth.tokenId].push(TransferRecord({
+            from: auth.from,
+            to: auth.to,
+            timestamp: block.timestamp,
+            transferHash: transferHash
+        }));
+        transferHashToTokenId[transferHash] = auth.tokenId;
+        
+        // Emit signature transfer event
+        emit SignatureTransferExecuted(
+            auth.tokenId,
+            auth.from,
+            auth.to,
+            transferHash,
+            authHash,
+            block.timestamp
+        );
+    }
+    
+    /**
+     * @dev Recover signer from signature
+     * @param hash Message hash
+     * @param signature Signature bytes
+     */
+    function recoverSigner(bytes32 hash, bytes memory signature) internal pure returns (address) {
+        require(signature.length == 65, "LandNFT: invalid signature length");
+        
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        
+        assembly {
+            r := mload(add(signature, 32))
+            s := mload(add(signature, 64))
+            v := byte(0, mload(add(signature, 96)))
+        }
+        
+        return ecrecover(hash, v, r, s);
+    }
+    
+    /**
+     * @dev Get current nonce for an address
+     * @param user Address to check nonce for
+     */
+    function getNonce(address user) public view returns (uint256) {
+        return nonces[user];
+    }
+    
+    /**
+     * @dev Check if signature hash has been used
+     * @param signatureHash Hash to check
+     */
+    function isSignatureUsed(bytes32 signatureHash) public view returns (bool) {
+        return usedSignatures[signatureHash];
+    }
+    
+    /**
+     * @dev Emergency function to fix ownership of existing NFTs
+     * Allows admin to claim ownership of any NFT for management purposes
+     * @param tokenId Token ID to claim
+     */
+    function adminClaimOwnership(uint256 tokenId) public onlyOwner {
+        require(_ownerOf(tokenId) != address(0), "LandNFT: token does not exist");
+        
+        address currentOwner = _ownerOf(tokenId);
+        if (currentOwner != owner()) {
+            // Transfer to admin for management
+            _update(owner(), tokenId, address(0));
+        }
     }
 }
