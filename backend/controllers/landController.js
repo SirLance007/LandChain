@@ -210,15 +210,57 @@ exports.updateLandStatus = async (req, res) => {
         
         // Check if blockchain service is available
         if (blockchainService.isConnected()) {
+          // Step 1: Mint to admin wallet
           blockchainResult = await blockchainService.mintLandNFT({
-            owner: land.owner,
+            owner: land.owner, // This will be ignored, mints to admin
             ipfsHash: land.ipfsHash,
             latitude: land.latitude,
             longitude: land.longitude,
             area: land.area
           });
           
-          console.log('✅ NFT minted successfully:', blockchainResult);
+          console.log('✅ NFT minted to admin wallet:', blockchainResult);
+          
+          // Step 2: Immediately transfer to actual user if user has wallet
+          if (blockchainResult.success && land.owner && land.owner !== blockchainResult.adminWallet) {
+            try {
+              console.log('🔄 Transferring NFT from admin to user...');
+              console.log(`   From: Admin wallet`);
+              console.log(`   To: ${land.owner}`);
+              console.log(`   Token ID: ${blockchainResult.tokenId}`);
+              
+              const transferResult = await blockchainService.transferLandNFTViaAdmin(
+                blockchainResult.tokenId,
+                land.owner
+              );
+              
+              if (transferResult.success && transferResult.uniqueTransfer) {
+                console.log('✅ NFT transferred to user successfully!');
+                console.log('🔗 New transfer transaction:', transferResult.transactionHash);
+                
+                // Update with transfer transaction hash instead of mint hash
+                blockchainResult.transactionHash = transferResult.transactionHash;
+                blockchainResult.blockNumber = transferResult.blockNumber;
+                blockchainResult.transferHash = transferResult.transferHash;
+                blockchainResult.finalOwner = land.owner;
+                blockchainResult.transferredToUser = true;
+              } else {
+                console.log('⚠️ Transfer to user failed, NFT remains with admin');
+                blockchainResult.transferredToUser = false;
+                blockchainResult.finalOwner = 'admin';
+              }
+              
+            } catch (transferError) {
+              console.error('❌ Transfer to user failed:', transferError.message);
+              blockchainResult.transferredToUser = false;
+              blockchainResult.finalOwner = 'admin';
+            }
+          } else {
+            console.log('⚠️ No user wallet provided, NFT remains with admin');
+            blockchainResult.transferredToUser = false;
+            blockchainResult.finalOwner = 'admin';
+          }
+          
         } else {
           console.log('⚠️ Blockchain service not available, updating database only');
         }
@@ -248,7 +290,13 @@ exports.updateLandStatus = async (req, res) => {
       success: true,
       land: updatedLand,
       blockchain: blockchainResult,
-      message: `Property status updated to ${status}${blockchainResult ? ' and NFT minted on blockchain' : ''}`
+      message: `Property status updated to ${status}${
+        blockchainResult 
+          ? blockchainResult.transferredToUser 
+            ? ' and NFT minted & transferred to user on blockchain' 
+            : ' and NFT minted on blockchain (admin managed)'
+          : ''
+      }`
     });
 
   } catch (error) {

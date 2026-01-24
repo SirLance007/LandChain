@@ -178,6 +178,14 @@ const acceptTransfer = async (req, res) => {
     const { transferKey, buyerSignature, buyerWalletAddress } = req.body;
     const buyerId = req.user._id.toString(); // Convert to string
     
+    console.log('🔄 Buyer accepting transfer:', {
+      transferKey,
+      buyerId,
+      buyerEmail: req.user.email,
+      buyerWalletAddress,
+      hasSignature: !!buyerSignature
+    });
+    
     const transfer = await PropertyTransfer.findOne({ transferKey });
     
     if (!transfer || transfer.expiresAt < new Date()) {
@@ -186,6 +194,12 @@ const acceptTransfer = async (req, res) => {
         error: 'Invalid or expired transfer key'
       });
     }
+    
+    console.log('📋 Transfer found:', {
+      propertyId: transfer.propertyId,
+      sellerId: transfer.sellerId,
+      currentStatus: transfer.status
+    });
     
     // Update transfer with buyer info
     transfer.buyerId = buyerId;
@@ -198,6 +212,7 @@ const acceptTransfer = async (req, res) => {
     await transfer.save();
     
     console.log(`✅ Buyer accepted transfer: ${transferKey}`);
+    console.log('💾 Saved buyer wallet address:', buyerWalletAddress);
     
     res.json({
       success: true,
@@ -220,6 +235,14 @@ const confirmTransfer = async (req, res) => {
     const { transferKey, sellerSignature, sellerWalletAddress } = req.body;
     const sellerId = req.user._id.toString(); // Convert to string
     
+    console.log('🔄 Seller confirming transfer:', {
+      transferKey,
+      sellerId,
+      sellerEmail: req.user.email,
+      sellerWalletAddress,
+      hasSignature: !!sellerSignature
+    });
+    
     const transfer = await PropertyTransfer.findOne({ 
       transferKey, 
       sellerId,
@@ -233,6 +256,13 @@ const confirmTransfer = async (req, res) => {
       });
     }
     
+    console.log('📋 Transfer ready for confirmation:', {
+      propertyId: transfer.propertyId,
+      buyerId: transfer.buyerId,
+      buyerWalletAddress: transfer.buyerWalletAddress,
+      currentStatus: transfer.status
+    });
+    
     // Update transfer with seller confirmation
     transfer.sellerSignature = sellerSignature;
     transfer.sellerSignedAt = new Date();
@@ -241,15 +271,24 @@ const confirmTransfer = async (req, res) => {
     
     await transfer.save();
     
-    // Execute actual ownership transfer
-    await executeOwnershipTransfer(transfer);
+    console.log('💾 Seller confirmation saved, executing ownership transfer...');
     
-    console.log(`✅ Ownership transferred for: ${transferKey}`);
+    // Execute actual ownership transfer
+    const transferResult = await executeOwnershipTransfer(transfer);
+    
+    console.log(`✅ Ownership transferred for: ${transferKey}`, transferResult);
     
     res.json({
       success: true,
-      message: 'Transfer completed successfully! Property ownership has been transferred.',
-      nextStep: 'Property ownership updated'
+      message: transferResult.blockchainTransfer 
+        ? 'Transfer completed successfully! Property ownership has been transferred on blockchain.' 
+        : 'Transfer completed in database! Blockchain transfer pending (NFT ownership needs admin setup).',
+      nextStep: 'Property ownership updated',
+      blockchainTransfer: transferResult.blockchainTransfer,
+      transactionHash: transferResult.transactionHash,
+      note: transferResult.blockchainTransfer 
+        ? 'New transaction hash generated' 
+        : 'Original registration hash retained - blockchain transfer pending'
     });
     
   } catch (error) {
@@ -296,6 +335,14 @@ const executeOwnershipTransfer = async (transfer) => {
     console.log('   Blockchain connected:', blockchainService.isConnected());
     console.log('   Buyer wallet:', transfer.buyerWalletAddress);
     console.log('   Token ID:', transfer.propertyId);
+    console.log('   Transfer object:', {
+      transferKey: transfer.transferKey,
+      propertyId: transfer.propertyId,
+      buyerId: transfer.buyerId,
+      sellerId: transfer.sellerId,
+      buyerWalletAddress: transfer.buyerWalletAddress,
+      sellerWalletAddress: transfer.sellerWalletAddress
+    });
     
     if (blockchainService.isConnected() && transfer.buyerWalletAddress) {
       try {
@@ -304,13 +351,26 @@ const executeOwnershipTransfer = async (transfer) => {
         console.log(`   To: ${transfer.buyerWalletAddress}`);
         
         // Execute blockchain transfer
-        blockchainResult = await blockchainService.transferLandNFT(
+        blockchainResult = await blockchainService.transferLandNFTViaAdmin(
           transfer.propertyId,
           transfer.buyerWalletAddress
         );
         
         console.log('✅ Blockchain transfer successful:', blockchainResult);
-        transferSuccess = true;
+        
+        // Check if it was a real blockchain transfer or just database update
+        if (blockchainResult.success && 
+            blockchainResult.transactionHash !== 'admin-not-owner' && 
+            blockchainResult.transactionHash !== 'already-owned' &&
+            blockchainResult.uniqueTransfer) {
+          transferSuccess = true;
+          console.log('🎉 Real blockchain NFT transfer completed!');
+          console.log('🔗 Unique transfer hash:', blockchainResult.transferHash);
+        } else {
+          transferSuccess = false;
+          console.log('📝 Database-only transfer (blockchain transfer not possible)');
+          console.log('💡 Reason:', blockchainResult.message);
+        }
         
       } catch (blockchainError) {
         console.error('❌ Blockchain transfer failed:', blockchainError.message);
@@ -327,6 +387,10 @@ const executeOwnershipTransfer = async (transfer) => {
       }
       if (!transfer.buyerWalletAddress) {
         console.log('   - Buyer wallet address not provided');
+        console.log('   - Available addresses:', {
+          buyerWalletAddress: transfer.buyerWalletAddress,
+          sellerWalletAddress: transfer.sellerWalletAddress
+        });
       }
       console.log('📝 Proceeding with database-only transfer...');
     }
@@ -347,8 +411,13 @@ const executeOwnershipTransfer = async (transfer) => {
     property.ownerPhone = ''; // Buyer can update later
     
     // Update transaction hash ONLY if blockchain transfer was successful
-    if (transferSuccess && blockchainResult && blockchainResult.transactionHash && blockchainResult.transactionHash !== 'already-owned') {
+    if (transferSuccess && blockchainResult && blockchainResult.transactionHash && 
+        blockchainResult.transactionHash !== 'already-owned' && 
+        blockchainResult.transactionHash !== 'admin-not-owner' &&
+        blockchainResult.uniqueTransfer) {
       console.log('📝 Updating property with NEW transaction hash:', blockchainResult.transactionHash);
+      console.log('🔗 Unique transfer hash from contract:', blockchainResult.transferHash);
+      
       property.transactionHash = blockchainResult.transactionHash;
       property.blockNumber = blockchainResult.blockNumber;
       
@@ -364,12 +433,33 @@ const executeOwnershipTransfer = async (transfer) => {
         transferDate: new Date(),
         transactionHash: blockchainResult.transactionHash,
         blockNumber: blockchainResult.blockNumber,
-        price: transfer.price
+        transferHash: blockchainResult.transferHash, // Unique contract-generated hash
+        price: transfer.price,
+        blockchainTransfer: true
       });
       
     } else {
       console.log('⚠️ Keeping original transaction hash - blockchain transfer not completed');
       console.log('   Original hash:', property.transactionHash);
+      console.log('   Reason:', blockchainResult?.message || 'Transfer failed');
+      
+      // Add database-only transfer to history
+      if (!property.transferHistory) {
+        property.transferHistory = [];
+      }
+      property.transferHistory.push({
+        fromOwner: oldOwner.ownerName,
+        fromEmail: oldOwner.userEmail,
+        toOwner: buyer.name,
+        toEmail: buyer.email,
+        transferDate: new Date(),
+        transactionHash: 'database-only',
+        blockNumber: 0,
+        transferHash: null,
+        price: transfer.price,
+        blockchainTransfer: false,
+        note: blockchainResult?.message || 'Blockchain transfer failed'
+      });
     }
     
     await property.save();
