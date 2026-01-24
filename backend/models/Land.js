@@ -57,6 +57,16 @@ const landSchema = new mongoose.Schema({
   },
   transactionHash: String,
   blockNumber: Number,
+  transferHistory: [{
+    fromOwner: String,
+    fromEmail: String,
+    toOwner: String,
+    toEmail: String,
+    transferDate: { type: Date, default: Date.now },
+    transactionHash: String,
+    blockNumber: Number,
+    price: Number
+  }],
   createdAt: {
     type: Date,
     default: Date.now

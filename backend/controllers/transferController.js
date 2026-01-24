@@ -282,39 +282,63 @@ const executeOwnershipTransfer = async (transfer) => {
     }
     
     console.log(`📋 Transferring ownership:`);
+    console.log(`   Property Token ID: ${transfer.propertyId}`);
     console.log(`   From: ${property.ownerName} (${property.userEmail})`);
     console.log(`   To: ${buyer.name} (${buyer.email})`);
     console.log(`   Seller Wallet: ${transfer.sellerWalletAddress || 'Not provided'}`);
     console.log(`   Buyer Wallet: ${transfer.buyerWalletAddress || 'Not provided'}`);
     
-    // Execute blockchain transfer if available and wallet addresses are provided
+    // Execute blockchain transfer
     let blockchainResult = null;
-    if (blockchainService.isConnected() && transfer.buyerWalletAddress && transfer.sellerWalletAddress) {
+    let transferSuccess = false;
+    
+    console.log('🔍 Checking blockchain transfer requirements:');
+    console.log('   Blockchain connected:', blockchainService.isConnected());
+    console.log('   Buyer wallet:', transfer.buyerWalletAddress);
+    console.log('   Token ID:', transfer.propertyId);
+    
+    if (blockchainService.isConnected() && transfer.buyerWalletAddress) {
       try {
-        console.log('🔗 Executing blockchain transfer with user wallets...');
+        console.log('🔗 Executing blockchain NFT transfer...');
+        console.log(`   Token ID: ${transfer.propertyId}`);
+        console.log(`   To: ${transfer.buyerWalletAddress}`);
         
-        // Execute actual blockchain transfer using user wallets
-        blockchainResult = await blockchainService.transferLandNFTWithUserWallets(
+        // Execute blockchain transfer
+        blockchainResult = await blockchainService.transferLandNFT(
           transfer.propertyId,
-          transfer.sellerWalletAddress,
           transfer.buyerWalletAddress
         );
         
         console.log('✅ Blockchain transfer successful:', blockchainResult);
+        transferSuccess = true;
         
       } catch (blockchainError) {
         console.error('❌ Blockchain transfer failed:', blockchainError.message);
-        // Continue with database update even if blockchain fails
-        console.log('📝 Continuing with database update...');
+        console.error('Full error:', blockchainError);
+        
+        // Don't fail the entire transfer if blockchain fails
+        console.log('📝 Continuing with database update despite blockchain failure...');
+        console.log('💡 User can retry blockchain transfer later');
       }
     } else {
-      console.log('⚠️ Blockchain service not available or wallet addresses missing, updating database only');
-      console.log('   Blockchain connected:', blockchainService.isConnected());
-      console.log('   Buyer wallet:', !!transfer.buyerWalletAddress);
-      console.log('   Seller wallet:', !!transfer.sellerWalletAddress);
+      console.log('⚠️ Blockchain transfer skipped:');
+      if (!blockchainService.isConnected()) {
+        console.log('   - Blockchain service not connected');
+      }
+      if (!transfer.buyerWalletAddress) {
+        console.log('   - Buyer wallet address not provided');
+      }
+      console.log('📝 Proceeding with database-only transfer...');
     }
     
     // Transfer ownership - Update all owner fields
+    const oldOwner = {
+      userId: property.userId,
+      userEmail: property.userEmail,
+      ownerName: property.ownerName,
+      transactionHash: property.transactionHash
+    };
+    
     property.userId = transfer.buyerId;
     property.userEmail = buyer.email;
     property.userGoogleId = buyer.googleId;
@@ -322,10 +346,30 @@ const executeOwnershipTransfer = async (transfer) => {
     property.ownerName = buyer.name;
     property.ownerPhone = ''; // Buyer can update later
     
-    // Add blockchain transaction info if available
-    if (blockchainResult && blockchainResult.transactionHash) {
+    // Update transaction hash ONLY if blockchain transfer was successful
+    if (transferSuccess && blockchainResult && blockchainResult.transactionHash && blockchainResult.transactionHash !== 'already-owned') {
+      console.log('📝 Updating property with NEW transaction hash:', blockchainResult.transactionHash);
       property.transactionHash = blockchainResult.transactionHash;
       property.blockNumber = blockchainResult.blockNumber;
+      
+      // Add transfer history to property
+      if (!property.transferHistory) {
+        property.transferHistory = [];
+      }
+      property.transferHistory.push({
+        fromOwner: oldOwner.ownerName,
+        fromEmail: oldOwner.userEmail,
+        toOwner: buyer.name,
+        toEmail: buyer.email,
+        transferDate: new Date(),
+        transactionHash: blockchainResult.transactionHash,
+        blockNumber: blockchainResult.blockNumber,
+        price: transfer.price
+      });
+      
+    } else {
+      console.log('⚠️ Keeping original transaction hash - blockchain transfer not completed');
+      console.log('   Original hash:', property.transactionHash);
     }
     
     await property.save();
@@ -336,8 +380,13 @@ const executeOwnershipTransfer = async (transfer) => {
     
     // Add blockchain info to transfer record
     if (blockchainResult) {
-      transfer.transactionHash = blockchainResult.transactionHash || 'simulated';
+      transfer.transactionHash = blockchainResult.transactionHash;
       transfer.blockNumber = blockchainResult.blockNumber || 0;
+      transfer.blockchainTransferSuccess = transferSuccess;
+    } else {
+      transfer.transactionHash = 'database-only';
+      transfer.blockNumber = 0;
+      transfer.blockchainTransferSuccess = false;
     }
     
     await transfer.save();
@@ -345,10 +394,24 @@ const executeOwnershipTransfer = async (transfer) => {
     console.log(`✅ Property #${transfer.propertyId} ownership successfully transferred!`);
     console.log(`   New Owner: ${buyer.name} (${buyer.email})`);
     console.log(`   New Owner Wallet: ${transfer.buyerWalletAddress || 'Not provided'}`);
+    console.log(`   Blockchain Transfer: ${transferSuccess ? 'SUCCESS' : 'FAILED/SKIPPED'}`);
     
     if (blockchainResult) {
-      console.log(`🔗 Blockchain Result:`, blockchainResult);
+      console.log(`🔗 Blockchain Result:`, {
+        transactionHash: blockchainResult.transactionHash,
+        blockNumber: blockchainResult.blockNumber,
+        success: transferSuccess
+      });
     }
+    
+    // Return result summary
+    return {
+      success: true,
+      blockchainTransfer: transferSuccess,
+      transactionHash: blockchainResult?.transactionHash || 'database-only',
+      newOwner: buyer.name,
+      newOwnerEmail: buyer.email
+    };
     
   } catch (error) {
     console.error('❌ Ownership transfer failed:', error);

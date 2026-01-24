@@ -22,32 +22,52 @@ class BlockchainService {
 
   async initialize() {
     try {
+      console.log('🔄 Initializing blockchain service...');
+      
       // Connect to Monad Testnet
       const rpcUrl = process.env.MONAD_RPC_URL || 'https://testnet-rpc.monad.xyz';
+      console.log('🌐 Connecting to RPC:', rpcUrl);
       this.provider = new ethers.JsonRpcProvider(rpcUrl);
+      
+      // Test provider connection
+      const blockNumber = await this.provider.getBlockNumber();
+      console.log('📦 Current block number:', blockNumber);
       
       // Setup signer (admin wallet)
       const privateKey = process.env.PRIVATE_KEY;
       if (!privateKey) {
         throw new Error('PRIVATE_KEY not found in environment variables');
       }
+      console.log('🔑 Private key found, creating signer...');
       
       this.signer = new ethers.Wallet(privateKey, this.provider);
+      console.log('👤 Admin wallet address:', this.signer.address);
+      
+      // Check wallet balance
+      const balance = await this.provider.getBalance(this.signer.address);
+      console.log('💰 Admin wallet balance:', ethers.formatEther(balance), 'MON');
       
       // Connect to deployed contract
       const contractAddress = process.env.CONTRACT_ADDRESS;
       if (!contractAddress) {
         throw new Error('CONTRACT_ADDRESS not found in environment variables');
       }
+      console.log('📋 Contract address:', contractAddress);
       
       this.contract = new ethers.Contract(contractAddress, LAND_NFT_ABI, this.signer);
       
-      // Test connection
+      // Test contract connection
+      const totalLands = await this.contract.getTotalLands();
+      console.log('🏠 Total lands in contract:', totalLands.toString());
+      
+      // Test network
       const network = await this.provider.getNetwork();
       console.log('✅ Connected to blockchain:', {
         network: network.name,
         chainId: network.chainId.toString(),
-        contractAddress: contractAddress
+        contractAddress: contractAddress,
+        adminWallet: this.signer.address,
+        balance: ethers.formatEther(balance) + ' MON'
       });
       
       this.isInitialized = true;
@@ -55,6 +75,7 @@ class BlockchainService {
       
     } catch (error) {
       console.error('❌ Blockchain initialization failed:', error.message);
+      console.error('Full error:', error);
       this.isInitialized = false;
       return false;
     }
@@ -118,32 +139,86 @@ class BlockchainService {
         newOwner: newOwnerAddress
       });
 
+      // First check current owner
+      const currentOwner = await this.contract.ownerOf(tokenId);
+      console.log('👤 Current NFT owner:', currentOwner);
+      console.log('🎯 Transferring to:', newOwnerAddress);
+      
+      if (currentOwner.toLowerCase() === newOwnerAddress.toLowerCase()) {
+        console.log('⚠️ NFT already owned by target address');
+        return {
+          success: true,
+          transactionHash: 'already-owned',
+          blockNumber: 0,
+          gasUsed: '0',
+          from: currentOwner,
+          to: newOwnerAddress,
+          message: 'NFT already owned by target address'
+        };
+      }
+
+      // Estimate gas for the transfer
+      const gasEstimate = await this.contract.transferLand.estimateGas(tokenId, newOwnerAddress);
+      console.log('⛽ Estimated gas:', gasEstimate.toString());
+
       // Call smart contract transfer function
-      const tx = await this.contract.transferLand(tokenId, newOwnerAddress);
+      const tx = await this.contract.transferLand(tokenId, newOwnerAddress, {
+        gasLimit: gasEstimate * 120n / 100n // Add 20% buffer
+      });
 
       console.log('📝 Transfer transaction submitted:', tx.hash);
+      console.log('⏳ Waiting for confirmation...');
 
       // Wait for confirmation
       const receipt = await tx.wait();
       console.log('✅ Transfer transaction confirmed:', receipt.hash);
+      console.log('📦 Block number:', receipt.blockNumber);
+      console.log('⛽ Gas used:', receipt.gasUsed.toString());
+
+      // Verify the transfer worked
+      const newOwner = await this.contract.ownerOf(tokenId);
+      console.log('🔍 Verified new owner:', newOwner);
 
       // Extract transfer event
-      const transferEvent = receipt.logs.find(
-        log => log.fragment && log.fragment.name === 'LandTransferred'
-      );
+      let transferEvent = null;
+      for (const log of receipt.logs) {
+        try {
+          const parsedLog = this.contract.interface.parseLog(log);
+          if (parsedLog && parsedLog.name === 'LandTransferred') {
+            transferEvent = parsedLog;
+            break;
+          }
+        } catch (e) {
+          // Skip logs that can't be parsed
+        }
+      }
 
-      return {
+      const result = {
         success: true,
         transactionHash: receipt.hash,
         blockNumber: receipt.blockNumber,
         gasUsed: receipt.gasUsed.toString(),
-        from: transferEvent ? transferEvent.args[1] : 'unknown',
-        to: transferEvent ? transferEvent.args[2] : newOwnerAddress
+        from: transferEvent ? transferEvent.args[1] : currentOwner,
+        to: transferEvent ? transferEvent.args[2] : newOwnerAddress,
+        verifiedNewOwner: newOwner
       };
+
+      console.log('🎉 NFT transfer completed successfully:', result);
+      return result;
 
     } catch (error) {
       console.error('❌ NFT transfer failed:', error);
-      throw new Error(`Blockchain transfer failed: ${error.message}`);
+      
+      // Provide more specific error messages
+      if (error.message.includes('Not the owner')) {
+        throw new Error('Transfer failed: Admin wallet is not the current owner of this NFT');
+      } else if (error.message.includes('Invalid recipient')) {
+        throw new Error('Transfer failed: Invalid recipient address');
+      } else if (error.message.includes('insufficient funds')) {
+        throw new Error('Transfer failed: Insufficient funds for gas fees');
+      } else {
+        throw new Error(`Blockchain transfer failed: ${error.message}`);
+      }
     }
   }
 
