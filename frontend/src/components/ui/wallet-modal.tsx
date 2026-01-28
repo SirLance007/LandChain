@@ -42,10 +42,20 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  // Auto-close when connected
+  React.useEffect(() => {
+    if (account && isOpen) {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 1500); // Close after 1.5s so user sees "Connected" success state
+      return () => clearTimeout(timer);
+    }
+  }, [account, isOpen, onClose]);
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -116,8 +126,8 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
 
                     {/* Actions */}
                     <div className="space-y-2">
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         className="w-full justify-start"
                         onClick={handleSwitchAccount}
                         disabled={isConnecting}
@@ -126,8 +136,8 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
                         Switch Account
                       </Button>
 
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         className="w-full justify-start"
                         onClick={() => window.open(`https://etherscan.io/address/${account}`, '_blank')}
                       >
@@ -135,8 +145,8 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
                         View on Etherscan
                       </Button>
 
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
                         onClick={handleDisconnect}
                       >
@@ -158,8 +168,8 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
                       </p>
                     </div>
 
-                    <Button 
-                      onClick={connectWallet} 
+                    <Button
+                      onClick={connectWallet}
                       disabled={isConnecting}
                       className="w-full"
                       size="lg"
@@ -170,7 +180,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
 
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-950 dark:border-blue-800">
                       <p className="text-sm text-blue-700 dark:text-blue-300">
-                        💡 <strong>Tip:</strong> MetaMask will ask you to select which account to connect. 
+                        💡 <strong>Tip:</strong> MetaMask will ask you to select which account to connect.
                         Choose the account you want to use for property registration.
                       </p>
                     </div>
@@ -178,9 +188,9 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
                     <div className="text-center">
                       <p className="text-xs text-muted-foreground">
                         Don't have MetaMask?{' '}
-                        <a 
-                          href="https://metamask.io/download/" 
-                          target="_blank" 
+                        <a
+                          href="https://metamask.io/download/"
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:underline"
                         >
