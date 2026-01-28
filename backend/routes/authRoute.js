@@ -10,11 +10,26 @@ router.get('/google',
 );
 
 // Google OAuth callback
+// Google OAuth callback
 router.get('/google/callback',
-  passport.authenticate('google', { failureRedirect: `${process.env.FRONTEND_URL}/login?error=auth_failed` }),
+  (req, res, next) => {
+    // Normalize frontend URL (ensure it starts with http/https)
+    let frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    if (!frontendUrl.startsWith('http')) {
+      frontendUrl = `https://${frontendUrl}`;
+    }
+
+    passport.authenticate('google', {
+      failureRedirect: `${frontendUrl}/login?error=auth_failed`
+    })(req, res, next);
+  },
   (req, res) => {
     // Successful authentication
-    res.redirect(`${process.env.FRONTEND_URL}/dashboard?auth=success`);
+    let frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    if (!frontendUrl.startsWith('http')) {
+      frontendUrl = `https://${frontendUrl}`;
+    }
+    res.redirect(`${frontendUrl}/dashboard?auth=success`);
   }
 );
 
@@ -53,9 +68,9 @@ router.put('/wallet', async (req, res) => {
   try {
     const { walletAddress } = req.body;
     const User = require('../models/User');
-    
+
     await User.findByIdAndUpdate(req.user._id, { walletAddress });
-    
+
     res.json({
       success: true,
       message: 'Wallet address updated successfully'
