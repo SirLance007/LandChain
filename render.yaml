@@ -36,7 +36,8 @@ services:
           property: url
 
   # FRONTEND SERVICE
-  - type: static
+  - type: web
+    env: static
     name: landchain-frontend
     region: singapore
     rootDir: frontend
