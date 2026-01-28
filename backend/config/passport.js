@@ -9,19 +9,20 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your-googl
   passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: "/api/auth/google/callback"
+    callbackURL: "/api/auth/google/callback",
+    proxy: true // Required for Render/Heroku to correctly detect https
   }, async (accessToken, refreshToken, profile, done) => {
     try {
       // Check if user already exists
       let user = await User.findOne({ googleId: profile.id });
-      
+
       if (user) {
         // Update last login
         user.lastLogin = new Date();
         await user.save();
         return done(null, user);
       }
-      
+
       // Create new user
       user = new User({
         googleId: profile.id,
@@ -29,10 +30,10 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your-googl
         name: profile.displayName,
         picture: profile.photos[0].value
       });
-      
+
       await user.save();
       console.log(`✅ New user registered: ${user.name} (${user.email})`);
-      
+
       return done(null, user);
     } catch (error) {
       console.error('Google OAuth error:', error);

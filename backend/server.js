@@ -11,6 +11,9 @@ const { blockchainService } = require('./utils/blockchain');
 
 const app = express();
 
+// Trust proxy for Render/Heroku (required for secure cookies and correct protocol detection)
+app.set('trust proxy', 1);
+
 // Middleware
 // Middleware
 const allowedOrigins = ['http://localhost:3001', 'http://localhost:3000'];
@@ -73,8 +76,8 @@ app.use('/api', require('./debug-nft-ownership')); // Debug routes
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     message: 'Server is running',
     blockchain: blockchainService.isConnected() ? 'Connected' : 'Disconnected'
   });
