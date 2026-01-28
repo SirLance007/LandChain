@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Wallet, RefreshCw, Copy, LogOut, ExternalLink } from 'lucide-react';
 import { Button } from './button';
@@ -52,7 +53,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
     }
   }, [account, isOpen, onClose]);
 
-  return (
+  return ReactDOM.createPortal(
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
@@ -72,7 +73,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="relative w-full max-w-md mx-4"
           >
-            <Card>
+            <Card className="border-0 shadow-2xl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
                 <div>
                   <CardTitle className="flex items-center gap-2">
@@ -205,7 +206,8 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };
 
