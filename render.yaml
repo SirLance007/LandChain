@@ -36,10 +36,7 @@ services:
           property: url
 
   # FRONTEND SERVICE
-  - type: web # Using 'web' instead of 'static' to allow for SPA routing rewrites if needed, or simply 'static'
-    # Actually Render recommends 'static' for React apps, but 'web' works too. 
-    # Let's use 'static' type which is free and dedicated for static sites.
-    type: static
+  - type: static
     name: landchain-frontend
     region: singapore
     rootDir: frontend
