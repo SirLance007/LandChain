@@ -12,8 +12,18 @@ const { blockchainService } = require('./utils/blockchain');
 const app = express();
 
 // Middleware
+// Middleware
+const allowedOrigins = ['http://localhost:3001', 'http://localhost:3000'];
+// Add Render frontend URL if available (handling both full URL and host-only)
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+  if (!process.env.FRONTEND_URL.startsWith('http')) {
+    allowedOrigins.push(`https://${process.env.FRONTEND_URL}`);
+  }
+}
+
 app.use(cors({
-  origin: ['http://localhost:3001', 'http://localhost:3000'],
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']

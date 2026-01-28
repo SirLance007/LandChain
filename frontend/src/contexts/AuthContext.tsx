@@ -28,7 +28,18 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const getApiUrl = () => {
+  let url = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+  if (url && !url.startsWith('http')) {
+    url = `https://${url}`;
+  }
+  if (!url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  return url;
+};
+
+const API_BASE_URL = getApiUrl();
 
 // Configure axios to include credentials
 axios.defaults.withCredentials = true;
@@ -46,10 +57,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const checkAuth = async (): Promise<void> => {
     if (authChecked) return; // Prevent multiple calls
-    
+
     try {
       const response = await axios.get(`${API_BASE_URL}/auth/user`);
-      
+
       if (response.data.success) {
         setUser(response.data.user);
         console.log('✅ User authenticated:', response.data.user.name);
@@ -74,7 +85,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await axios.post(`${API_BASE_URL}/auth/logout`);
       setUser(null);
       toast.success('Logged out successfully');
-      
+
       // Redirect to landing page
       window.location.href = '/';
     } catch (error: any) {

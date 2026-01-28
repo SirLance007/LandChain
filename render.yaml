@@ -33,13 +33,14 @@ services:
         fromService:
           type: web
           name: landchain-frontend
-          property: url
+          property: host
 
   # FRONTEND SERVICE
   - type: web
     env: static
     name: landchain-frontend
-    region: singapore
+    # region: singapore # Static sites in blueprints don't support region field yet? Or maybe they do but error said no. 
+    # Removing region to be safe as per error "static sites cannot have a region"
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: build
@@ -52,4 +53,4 @@ services:
         fromService:
           type: web
           name: landchain-backend
-          property: url
+          property: host

@@ -37,7 +37,18 @@ interface LandProviderProps {
   children: ReactNode;
 }
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const getApiUrl = () => {
+  let url = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+  if (url && !url.startsWith('http')) {
+    url = `https://${url}`;
+  }
+  if (!url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  return url;
+};
+
+const API_BASE_URL = getApiUrl();
 
 export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
   const [lands, setLands] = useState<Land[]>([]);
@@ -50,7 +61,7 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
     setLoading(true);
     try {
       const response = await axios.post(`${API_BASE_URL}/land/register`, landData);
-      
+
       if (response.data.success) {
         toast.success('Land registered successfully!');
         setLastFetchParams(''); // Clear cache to refresh data
@@ -73,7 +84,7 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
     setLoading(true);
     try {
       const response = await axios.get(`${API_BASE_URL}/land/${tokenId}`);
-      
+
       if (response.data.success) {
         return response.data.land;
       } else {
@@ -92,7 +103,7 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
   const getAllLands = async (ownerAddress?: string, userId?: string, email?: string, googleId?: string): Promise<void> => {
     // Create cache key to prevent duplicate calls
     const cacheKey = `${ownerAddress || 'none'}-${userId || 'none'}-${email || 'none'}-${googleId || 'none'}`;
-    
+
     // Only use cache if we have data AND same parameters (skip cache if lands is empty)
     if (lastFetchParams === cacheKey && lands.length > 0) {
       console.log('🚀 Using cached lands data');
@@ -103,7 +114,7 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
     try {
       let url = `${API_BASE_URL}/land`;
       const params = new URLSearchParams();
-      
+
       // PRIORITY ORDER: email > googleId > userId > owner
       if (email) {
         params.append('email', email);
@@ -118,13 +129,13 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
         params.append('owner', ownerAddress);
         console.log('⚠️ Filtering by wallet address (should be avoided):', ownerAddress);
       }
-      
+
       if (params.toString()) {
         url += `?${params.toString()}`;
       }
-      
+
       const response = await axios.get(url);
-      
+
       if (response.data.success) {
         setLands(response.data.lands);
         setLastFetchParams(cacheKey);
@@ -153,7 +164,7 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
 
       const formData = new FormData();
       formData.append('file', file);
-      
+
       // Add encryption parameters if provided
       if (propertyId && ownerAddress) {
         formData.append('propertyId', propertyId);
@@ -186,7 +197,7 @@ export const LandProvider: React.FC<LandProviderProps> = ({ children }) => {
       }
     } catch (error: any) {
       console.error('Upload error:', error);
-      
+
       if (error.code === 'ECONNABORTED') {
         toast.error('⏰ Upload timeout. Please try again with a smaller file.');
       } else if (error.response?.status === 413) {
