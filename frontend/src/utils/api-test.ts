@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+let url = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+if (url && !url.startsWith('http')) {
+  url = `https://${url}`;
+}
+if (!url.endsWith('/api')) {
+  url = `${url}/api`;
+}
+const API_BASE_URL = url;
 
 export const testBackendConnection = async () => {
   try {

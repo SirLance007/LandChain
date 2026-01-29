@@ -3,12 +3,12 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
-  Eye, 
-  User, 
+import {
+  CheckCircle,
+  XCircle,
+  Clock,
+  Eye,
+  User,
   MapPin,
   Building,
   Phone,
@@ -24,27 +24,34 @@ const AdminPanel: React.FC = () => {
 
   useEffect(() => {
     getAllLands().then(() => { // Fetch ALL lands for admin panel (no user filter)
-      console.log('Admin Panel: Loaded lands:', lands.map(land => ({ 
-        id: land._id, 
-        tokenId: land.tokenId, 
+      console.log('Admin Panel: Loaded lands:', lands.map(land => ({
+        id: land._id,
+        tokenId: land.tokenId,
         tokenIdType: typeof land.tokenId,
-        status: land.status 
+        status: land.status
       })));
     });
   }, []);
 
   const updatePropertyStatus = async (tokenId: number, status: 'verified' | 'rejected') => {
     console.log('Frontend: Updating property status', { tokenId, status, tokenIdType: typeof tokenId });
-    
+
     if (!tokenId || tokenId === undefined) {
       toast.error('Invalid property ID');
       return;
     }
-    
+
     setLoading(true);
     try {
-      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
-      
+      let url = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      if (url && !url.startsWith('http')) {
+        url = `https://${url}`;
+      }
+      if (!url.endsWith('/api')) {
+        url = `${url}/api`;
+      }
+      const API_BASE_URL = url;
+
       const response = await axios.put(`${API_BASE_URL}/land/${tokenId}/status`, {
         status: status
       });
@@ -154,7 +161,7 @@ const AdminPanel: React.FC = () => {
                       <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
                         <Building className="w-6 h-6 text-primary" />
                       </div>
-                      
+
                       <div className="space-y-1">
                         <h3 className="font-semibold">Property #{land.tokenId}</h3>
                         <div className="flex items-center space-x-4 text-sm text-muted-foreground">
@@ -181,10 +188,10 @@ const AdminPanel: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center space-x-2">
                       {getStatusBadge(land.status)}
-                      
+
                       <div className="flex space-x-2">
                         <Button
                           variant="outline"
@@ -194,7 +201,7 @@ const AdminPanel: React.FC = () => {
                           <Eye className="w-4 h-4 mr-1" />
                           View
                         </Button>
-                        
+
                         <Button
                           variant="outline"
                           size="sm"
@@ -205,7 +212,7 @@ const AdminPanel: React.FC = () => {
                           <CheckCircle className="w-4 h-4 mr-1" />
                           Approve
                         </Button>
-                        
+
                         <Button
                           variant="outline"
                           size="sm"
@@ -255,7 +262,7 @@ const AdminPanel: React.FC = () => {
                       <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                         <Building className="w-5 h-5 text-primary" />
                       </div>
-                      
+
                       <div>
                         <h3 className="font-medium">Property #{land.tokenId}</h3>
                         <p className="text-sm text-muted-foreground">
@@ -263,10 +270,10 @@ const AdminPanel: React.FC = () => {
                         </p>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center space-x-3">
                       {getStatusBadge(land.status)}
-                      
+
                       <Button
                         variant="ghost"
                         size="icon"

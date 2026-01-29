@@ -5,10 +5,10 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import WalletConnect from '../components/ui/wallet-connect';
-import { 
-  Home, 
-  User, 
-  MapPin, 
+import {
+  Home,
+  User,
+  MapPin,
   Key,
   CheckCircle,
   Clock,
@@ -59,7 +59,14 @@ const PropertyTransfer: React.FC = () => {
   const [accepting, setAccepting] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState<string>('');
 
-  const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+  let url = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+  if (url && !url.startsWith('http')) {
+    url = `https://${url}`;
+  }
+  if (!url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  const API_BASE_URL = url;
 
   useEffect(() => {
     if (transferKey) {
@@ -70,7 +77,7 @@ const PropertyTransfer: React.FC = () => {
   const fetchTransferDetails = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/transfer/${transferKey}`);
-      
+
       if (response.data.success) {
         setTransferDetails(response.data);
       } else {
@@ -88,15 +95,15 @@ const PropertyTransfer: React.FC = () => {
 
   const handleConfirmTransfer = async () => {
     if (!user || !transferDetails) return;
-    
+
     // Check if wallet is connected
     if (!account && !connectedWallet) {
       toast.error('Please connect your wallet first');
       return;
     }
-    
+
     const walletAddress = account || connectedWallet;
-    
+
     setAccepting(true);
     try {
       const response = await axios.post(`${API_BASE_URL}/transfer/confirm`, {
@@ -104,11 +111,11 @@ const PropertyTransfer: React.FC = () => {
         sellerSignature: `seller_signature_${Date.now()}`, // TODO: Implement proper digital signature
         sellerWalletAddress: walletAddress
       });
-      
+
       if (response.data.success) {
         toast.success('🎉 Transfer completed! Property ownership has been transferred.');
         fetchTransferDetails(); // Refresh details
-        
+
         // Redirect to My Lands after 3 seconds
         setTimeout(() => {
           navigate('/my-lands');
@@ -126,15 +133,15 @@ const PropertyTransfer: React.FC = () => {
 
   const handleAcceptTransfer = async () => {
     if (!user || !transferDetails) return;
-    
+
     // Check if wallet is connected
     if (!account && !connectedWallet) {
       toast.error('Please connect your wallet first');
       return;
     }
-    
+
     const walletAddress = account || connectedWallet;
-    
+
     setAccepting(true);
     try {
       const response = await axios.post(`${API_BASE_URL}/transfer/accept`, {
@@ -142,7 +149,7 @@ const PropertyTransfer: React.FC = () => {
         buyerSignature: `buyer_signature_${Date.now()}`, // TODO: Implement proper digital signature
         buyerWalletAddress: walletAddress
       });
-      
+
       if (response.data.success) {
         toast.success('Transfer accepted successfully!');
         fetchTransferDetails(); // Refresh details
@@ -206,11 +213,11 @@ const PropertyTransfer: React.FC = () => {
 
   const { transfer, property, seller } = transferDetails;
   const isExpired = new Date(transfer.expiresAt) < new Date();
-  
+
   // Check if current user is the intended buyer
   const isBuyer = user?.email === transferDetails.buyerEmail;
   const isSeller = user?.email === seller.email;
-  
+
   // Check if user is authorized to view this transfer
   const isAuthorized = isBuyer || isSeller;
 
@@ -260,11 +267,11 @@ const PropertyTransfer: React.FC = () => {
           </div>
           <h1 className="text-3xl font-bold mb-2">Property Transfer</h1>
           <p className="text-muted-foreground">
-            {isBuyer 
-              ? `You have been invited to receive this property from ${seller.name}` 
-              : isSeller 
-              ? 'Your property transfer request' 
-              : 'Property transfer details'
+            {isBuyer
+              ? `You have been invited to receive this property from ${seller.name}`
+              : isSeller
+                ? 'Your property transfer request'
+                : 'Property transfer details'
             }
           </p>
         </div>
@@ -283,17 +290,17 @@ const PropertyTransfer: React.FC = () => {
                 <h3 className="font-semibold text-lg">Property #{property.tokenId}</h3>
                 <p className="text-muted-foreground">{property.area} sq ft</p>
               </div>
-              
+
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <MapPin className="w-4 h-4" />
                 <span>{property.latitude.toFixed(4)}, {property.longitude.toFixed(4)}</span>
               </div>
-              
+
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <User className="w-4 h-4" />
                 <span>Current Owner: {property.ownerName}</span>
               </div>
-              
+
               {transfer.price && (
                 <div className="p-3 bg-green-50 rounded-lg">
                   <p className="text-sm text-green-600">Transfer Price</p>
@@ -318,14 +325,14 @@ const PropertyTransfer: React.FC = () => {
                   {transfer.status.replace('_', ' ').toUpperCase()}
                 </Badge>
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <span>Expires</span>
                 <span className={`text-sm ${isExpired ? 'text-red-500' : 'text-muted-foreground'}`}>
                   {new Date(transfer.expiresAt).toLocaleDateString()}
                 </span>
               </div>
-              
+
               <div className="space-y-2">
                 <p className="text-sm font-medium">Seller</p>
                 <div className="flex items-center space-x-2">
@@ -345,7 +352,7 @@ const PropertyTransfer: React.FC = () => {
                   <p className="text-xs text-green-600">✓ This is you</p>
                 )}
               </div>
-              
+
               {isBuyer && transfer.status === 'pending' && !isExpired && (
                 <div className="space-y-4">
                   {/* Wallet Connection for Buyer */}
@@ -357,13 +364,13 @@ const PropertyTransfer: React.FC = () => {
                     <p className="text-xs text-blue-600 mb-3">
                       Connect your MetaMask wallet to receive the property NFT
                     </p>
-                    <WalletConnect 
+                    <WalletConnect
                       onWalletConnect={setConnectedWallet}
                       currentAddress={account || connectedWallet}
                     />
                   </div>
-                  
-                  <Button 
+
+                  <Button
                     onClick={handleAcceptTransfer}
                     disabled={accepting || (!account && !connectedWallet)}
                     className="w-full"
@@ -371,7 +378,7 @@ const PropertyTransfer: React.FC = () => {
                     {accepting ? 'Accepting...' : 'Accept Transfer'}
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
-                  
+
                   {(!account && !connectedWallet) && (
                     <p className="text-xs text-amber-600 text-center">
                       ⚠️ Please connect your wallet to accept the transfer
@@ -391,13 +398,13 @@ const PropertyTransfer: React.FC = () => {
                     <p className="text-xs text-green-600 mb-3">
                       Connect your MetaMask wallet to confirm the transfer
                     </p>
-                    <WalletConnect 
+                    <WalletConnect
                       onWalletConnect={setConnectedWallet}
                       currentAddress={account || connectedWallet}
                     />
                   </div>
-                  
-                  <Button 
+
+                  <Button
                     onClick={handleConfirmTransfer}
                     disabled={accepting || (!account && !connectedWallet)}
                     className="w-full bg-green-600 hover:bg-green-700"
@@ -405,7 +412,7 @@ const PropertyTransfer: React.FC = () => {
                     {accepting ? 'Confirming...' : 'Confirm Transfer'}
                     <CheckCircle className="w-4 h-4 ml-2" />
                   </Button>
-                  
+
                   {(!account && !connectedWallet) && (
                     <p className="text-xs text-amber-600 text-center">
                       ⚠️ Please connect your wallet to confirm the transfer
@@ -413,7 +420,7 @@ const PropertyTransfer: React.FC = () => {
                   )}
                 </div>
               )}
-              
+
               {transfer.status === 'buyer_accepted' && (
                 <div className="p-3 bg-blue-50 rounded-lg">
                   <div className="flex items-center space-x-2">
@@ -423,8 +430,8 @@ const PropertyTransfer: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-sm text-blue-600 mt-1">
-                    {isBuyer 
-                      ? 'Waiting for seller confirmation' 
+                    {isBuyer
+                      ? 'Waiting for seller confirmation'
                       : 'Please confirm to complete the transfer'
                     }
                   </p>
@@ -454,8 +461,8 @@ const PropertyTransfer: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-sm text-green-600 mt-1">
-                    {isBuyer 
-                      ? 'Congratulations! You are now the owner of this property.' 
+                    {isBuyer
+                      ? 'Congratulations! You are now the owner of this property.'
                       : 'Property has been successfully transferred to the buyer.'
                     }
                   </p>
@@ -471,7 +478,7 @@ const PropertyTransfer: React.FC = () => {
                         <p className="text-xs text-green-500">
                           🔗 TX: {transfer.transactionHash.substring(0, 20)}...
                         </p>
-                        <a 
+                        <a
                           href={`https://testnet-explorer.monad.xyz/tx/${transfer.transactionHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -494,7 +501,7 @@ const PropertyTransfer: React.FC = () => {
                   </div>
                 </div>
               )}
-              
+
               {isExpired && (
                 <div className="p-3 bg-red-50 rounded-lg">
                   <div className="flex items-center space-x-2">
