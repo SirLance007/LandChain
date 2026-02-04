@@ -36,6 +36,13 @@ app.use(cors({
 const connectMongo = require('connect-mongo');
 const MongoStore = connectMongo.default || connectMongo;
 
+// Connect to MongoDB
+const mongooseConnectionPromise = mongoose.connect(process.env.MONGODB_URI)
+  .then(m => {
+    console.log('MongoDB connected');
+    return m.connection.getClient();
+  }); // Errors handled by the promise consumer or unhandled rejection (fatal, which is desired here)
+
 // Session configuration
 const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 
@@ -44,7 +51,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI,
+    clientPromise: mongooseConnectionPromise,
     collectionName: 'sessions',
     ttl: 24 * 60 * 60 // 1 day
   }),
@@ -55,24 +62,6 @@ app.use(session({
   },
   proxy: true // Required for Render
 }));
-
-// Debug Middleware for Sessions
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - SessionID: ${req.sessionID} - User: ${req.session?.passport?.user || 'Guest'}`);
-  next();
-});
-
-// Passport middleware
-app.use(passport.initialize());
-app.use(passport.session());
-
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error(' MongoDB connection error:', err));
 
 // Initialize blockchain service
 blockchainService.initialize()

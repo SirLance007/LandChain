@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { 
+import {
   Home,
   Plus
 } from 'lucide-react';
@@ -28,13 +28,20 @@ const MyLands: React.FC = () => {
 
   const fetchPendingTransfers = async () => {
     if (!user) return;
-    
+
     try {
-      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      let url = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      if (url && !url.startsWith('http')) {
+        url = `https://${url}`;
+      }
+      if (!url.endsWith('/api')) {
+        url = `${url}/api`;
+      }
+      const API_BASE_URL = url;
       const response = await fetch(`${API_BASE_URL}/transfer/pending`, {
         credentials: 'include'
       });
-      
+
       const data = await response.json();
       if (data.success) {
         setPendingTransfers(data.transfers || []);
@@ -46,10 +53,17 @@ const MyLands: React.FC = () => {
 
   const handleTransferSubmit = async (buyerEmail: string, price?: number) => {
     if (!user || !selectedPropertyId) return;
-    
+
     setTransferring(selectedPropertyId);
     try {
-      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      let url = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      if (url && !url.startsWith('http')) {
+        url = `https://${url}`;
+      }
+      if (!url.endsWith('/api')) {
+        url = `${url}/api`;
+      }
+      const API_BASE_URL = url;
       const response = await fetch(`${API_BASE_URL}/transfer/initiate`, {
         method: 'POST',
         headers: {
@@ -62,9 +76,9 @@ const MyLands: React.FC = () => {
           price
         })
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         toast.success('Transfer key generated successfully!');
         // Refresh lands and pending transfers
@@ -89,7 +103,7 @@ const MyLands: React.FC = () => {
     if (isAuthenticated && user && lands.length === 0) {
       getAllLands(undefined, undefined, user.email); // Remove wallet address completely
     }
-    
+
     // Fetch pending transfers
     if (isAuthenticated && user) {
       fetchPendingTransfers();
@@ -101,13 +115,13 @@ const MyLands: React.FC = () => {
 
   const filteredLands = userLands
     .filter(land => {
-      const matchesSearch = 
+      const matchesSearch =
         land.ownerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         land.tokenId.toString().includes(searchTerm) ||
         land.area.toString().includes(searchTerm);
-      
+
       const matchesStatus = statusFilter === 'all' || land.status === statusFilter;
-      
+
       return matchesSearch && matchesStatus;
     })
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -200,7 +214,7 @@ const MyLands: React.FC = () => {
                 </div>
                 <div className="flex space-x-2">
                   {pendingTransfers.slice(0, 2).map((transfer) => (
-                    <Link 
+                    <Link
                       key={transfer.transferKey}
                       to={`/transfer/${transfer.transferKey}`}
                       className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors"
@@ -285,15 +299,14 @@ const MyLands: React.FC = () => {
                         <p className="text-blue-100 text-sm">Token ID: {land.tokenId}</p>
                       </div>
                     </div>
-                    
+
                     {/* Status Badge */}
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                      land.status === 'verified' 
-                        ? 'bg-green-100 text-green-800' 
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${land.status === 'verified'
+                        ? 'bg-green-100 text-green-800'
                         : land.status === 'pending'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}>
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
                       {land.status.toUpperCase()}
                     </span>
                   </div>
@@ -307,34 +320,34 @@ const MyLands: React.FC = () => {
                       <span className="text-gray-600 font-medium">Owner</span>
                       <span className="text-gray-900 font-semibold">{land.ownerName}</span>
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600 font-medium">Area</span>
                       <span className="text-gray-900 font-semibold">{land.area.toLocaleString()} sq ft</span>
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600 font-medium">Location</span>
                       <span className="text-gray-900 font-semibold text-sm">
                         {land.latitude.toFixed(4)}, {land.longitude.toFixed(4)}
                       </span>
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600 font-medium">Registered</span>
                       <span className="text-gray-900 font-semibold">
                         {new Date(land.createdAt).toLocaleDateString()}
                       </span>
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600 font-medium">Blockchain</span>
                       <span className="text-gray-900 font-semibold text-sm">
                         {land.transactionHash && land.transactionHash !== 'simulated'
                           ? `TX: ${land.transactionHash.substring(0, 10)}...`
-                          : land.status === 'verified' 
-                          ? 'On-chain ✅'
-                          : 'Pending ⏳'
+                          : land.status === 'verified'
+                            ? 'On-chain ✅'
+                            : 'Pending ⏳'
                         }
                       </span>
                     </div>
@@ -351,7 +364,7 @@ const MyLands: React.FC = () => {
                         <span>View Details</span>
                       </button>
                     </Link>
-                    
+
                     {land.status === 'verified' && (
                       <button
                         onClick={() => handleTransferProperty(land.tokenId)}
@@ -394,18 +407,18 @@ const MyLands: React.FC = () => {
               <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-r from-blue-100 to-purple-100 rounded-full flex items-center justify-center">
                 <Home className="w-12 h-12 text-blue-600" />
               </div>
-              
+
               <h3 className="text-2xl font-bold text-gray-900 mb-4">
                 {searchTerm || statusFilter !== 'all' ? 'No Properties Found' : 'Start Your Property Portfolio'}
               </h3>
-              
+
               <p className="text-gray-600 mb-8 text-lg">
-                {searchTerm || statusFilter !== 'all' 
+                {searchTerm || statusFilter !== 'all'
                   ? 'Try adjusting your search criteria or filters to find properties.'
                   : 'Register your first property on the blockchain to begin building your digital property portfolio.'
                 }
               </p>
-              
+
               {!searchTerm && statusFilter === 'all' ? (
                 <div className="space-y-6">
                   <Link to="/register">
@@ -413,7 +426,7 @@ const MyLands: React.FC = () => {
                       Register Your First Property
                     </button>
                   </Link>
-                  
+
                   <div className="flex items-center justify-center space-x-8 text-sm text-gray-500">
                     <div className="flex items-center space-x-2">
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -456,7 +469,7 @@ const MyLands: React.FC = () => {
                 <div className="text-3xl font-bold text-blue-600 mb-1">{filteredLands.length}</div>
                 <div className="text-sm text-blue-700 font-medium">Total Properties</div>
               </div>
-              
+
               <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-lg">
                 <div className="w-12 h-12 mx-auto mb-3 bg-green-600 rounded-lg flex items-center justify-center">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -468,7 +481,7 @@ const MyLands: React.FC = () => {
                 </div>
                 <div className="text-sm text-green-700 font-medium">Verified</div>
               </div>
-              
+
               <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg">
                 <div className="w-12 h-12 mx-auto mb-3 bg-orange-600 rounded-lg flex items-center justify-center">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -480,7 +493,7 @@ const MyLands: React.FC = () => {
                 </div>
                 <div className="text-sm text-orange-700 font-medium">Pending</div>
               </div>
-              
+
               <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg">
                 <div className="w-12 h-12 mx-auto mb-3 bg-purple-600 rounded-lg flex items-center justify-center">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -496,7 +509,7 @@ const MyLands: React.FC = () => {
           </div>
         )}
       </div>
-      
+
       {/* Transfer Dialog */}
       <TransferDialog
         isOpen={transferDialogOpen}
