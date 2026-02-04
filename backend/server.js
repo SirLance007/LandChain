@@ -33,6 +33,9 @@ app.use(cors({
 }));
 
 // Session configuration
+const connectMongo = require('connect-mongo');
+const MongoStore = connectMongo.default || connectMongo;
+
 // Session configuration
 const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 
@@ -40,6 +43,11 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'landchain-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGODB_URI,
+    collectionName: 'sessions',
+    ttl: 24 * 60 * 60 // 1 day
+  }),
   cookie: {
     secure: isProduction, // true for HTTPS
     sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-site
