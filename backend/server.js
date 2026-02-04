@@ -33,16 +33,26 @@ app.use(cors({
 }));
 
 // Session configuration
+// Session configuration
+const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'landchain-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // true for HTTPS
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' for cross-site
+    secure: isProduction, // true for HTTPS
+    sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-site
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
+  },
+  proxy: true // Required for Render
 }));
+
+// Debug Middleware for Sessions
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - SessionID: ${req.sessionID} - User: ${req.session?.passport?.user || 'Guest'}`);
+  next();
+});
 
 // Passport middleware
 app.use(passport.initialize());
