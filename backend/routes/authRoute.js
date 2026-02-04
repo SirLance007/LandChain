@@ -19,17 +19,25 @@ router.get('/google/callback',
       frontendUrl = `https://${frontendUrl}`;
     }
 
-    passport.authenticate('google', {
-      failureRedirect: `${frontendUrl}/login?error=auth_failed`
+    passport.authenticate('google', (err, user, info) => {
+      if (err) {
+        console.error('❌ Google OAuth Callback Error:', err);
+        return res.redirect(`${frontendUrl}/login?error=server_error&details=${encodeURIComponent(err.message)}`);
+      }
+      if (!user) {
+        console.warn('⚠️ Google OAuth: No user returned');
+        return res.redirect(`${frontendUrl}/login?error=auth_failed`);
+      }
+
+      req.logIn(user, (loginErr) => {
+        if (loginErr) {
+          console.error('❌ Passport Login Error:', loginErr);
+          return res.redirect(`${frontendUrl}/login?error=login_failed`);
+        }
+        // Successful authentication
+        return res.redirect(`${frontendUrl}/dashboard?auth=success`);
+      });
     })(req, res, next);
-  },
-  (req, res) => {
-    // Successful authentication
-    let frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    if (!frontendUrl.startsWith('http')) {
-      frontendUrl = `https://${frontendUrl}`;
-    }
-    res.redirect(`${frontendUrl}/dashboard?auth=success`);
   }
 );
 

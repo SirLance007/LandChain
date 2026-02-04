@@ -1,0 +1,16 @@
+name: Keep Server Alive
+
+on:
+  schedule:
+    # Runs every 14 minutes to prevent Render free tier sleep (15 min timeout)
+    - cron: '*/14 * * * *'
+  workflow_dispatch: # Allows manual triggering from GitHub Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Server Health
+        # Pings the health endpoint. -I fetches headers only (lighter request).
+        # Replace the URL if your backend URL changes.
+        run: curl -I https://landchain-backend-tr16.onrender.com/health

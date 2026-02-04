@@ -26,9 +26,9 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your-googl
       // Create new user
       user = new User({
         googleId: profile.id,
-        email: profile.emails[0].value,
-        name: profile.displayName,
-        picture: profile.photos[0].value
+        email: profile.emails?.[0]?.value || '',
+        name: profile.displayName || 'Unknown User',
+        picture: profile.photos?.[0]?.value || ''
       });
 
       await user.save();
@@ -36,7 +36,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your-googl
 
       return done(null, user);
     } catch (error) {
-      console.error('Google OAuth error:', error);
+      console.error('❌ Google OAuth Strategy Error:', error);
       return done(error, null);
     }
   }));
