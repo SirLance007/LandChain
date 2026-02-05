@@ -47,9 +47,17 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'your-googl
 
   passport.deserializeUser(async (id, done) => {
     try {
+      // console.log('🔍 Deserializing User ID:', id); // Optional debug
       const user = await User.findById(id);
-      done(null, user);
+      if (user) {
+        // console.log('✅ User found:', user.email);
+        done(null, user);
+      } else {
+        console.warn('⚠️ Deserialize: User not found for ID:', id);
+        done(null, null);
+      }
     } catch (error) {
+      console.error('❌ Deserialize Error:', error);
       done(error, null);
     }
   });

@@ -4,6 +4,28 @@ const express = require('express');
 const passport = require('passport');
 const router = express.Router();
 
+// Debug session endpoint
+router.get('/debug-session', (req, res) => {
+  res.json({
+    sessionID: req.sessionID,
+    hasSession: !!req.session,
+    isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : 'unknown',
+    user: req.user ? { id: req.user._id, name: req.user.name } : null,
+    cookie: req.session ? req.session.cookie : null,
+    headers: {
+      cookie: req.headers.cookie ? 'present' : 'missing',
+      origin: req.headers.origin,
+      referer: req.headers.referer,
+      'user-agent': req.headers['user-agent']
+    },
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      isSecure: req.secure,
+      protocol: req.protocol
+    }
+  });
+});
+
 // Google OAuth login
 router.get('/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })

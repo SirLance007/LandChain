@@ -12,7 +12,9 @@ const { blockchainService } = require('./utils/blockchain');
 const app = express();
 
 // Trust proxy for Render/Heroku (required for secure cookies and correct protocol detection)
-app.set('trust proxy', 1);
+if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
+  app.set('trust proxy', 1);
+}
 
 // Middleware
 // Middleware
@@ -46,7 +48,16 @@ const mongooseConnectionPromise = mongoose.connect(process.env.MONGODB_URI)
 // Session configuration
 const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 
-app.use(session({
+console.log('🔍 Environment Check:', {
+  NODE_ENV: process.env.NODE_ENV,
+  RENDER: process.env.RENDER,
+  isProduction,
+  PORT: process.env.PORT
+});
+
+console.log('🔍 Allowed Origins:', allowedOrigins);
+
+const sessionConfig = {
   secret: process.env.SESSION_SECRET || 'landchain-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
@@ -57,11 +68,27 @@ app.use(session({
   }),
   cookie: {
     secure: isProduction, // true for HTTPS
-    sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-site
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-site in prod, lax for local
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    httpOnly: true // Prevents XSS
   },
   proxy: true // Required for Render
-}));
+};
+
+// Explicitly log the final cookie config to verify
+console.log('🔍 Final Session Cookie Config:', {
+  isProduction,
+  secure: sessionConfig.cookie.secure,
+  sameSite: sessionConfig.cookie.sameSite
+});
+
+console.log('🔍 Session Config:', {
+  cookie: sessionConfig.cookie,
+  proxy: sessionConfig.proxy,
+  store: 'MongoStore'
+});
+
+app.use(session(sessionConfig));
 
 // Initialize blockchain service
 blockchainService.initialize()
